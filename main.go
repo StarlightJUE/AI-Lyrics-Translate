@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,24 +19,32 @@ import (
 )
 
 func main() {
-	// 1. 加载配置（安全隔离环境变量）
-	cfg := config.LoadConfig()
+	// 命令行参数解析
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "指定配置文件路径 (例如 config.yaml 或 config.json)")
+	flag.StringVar(&configPath, "c", "", "指定配置文件路径简写")
+	flag.Parse()
+
+	// 1. 加载配置（优先级：-c 指定文件 > config.yaml/json > .env > 环境变量 > 自动生成）
+	cfg := config.LoadConfig(configPath)
 
 	fmt.Println("==================================================")
 	fmt.Println("   AI-Lyrics-Translate 歌词翻译本地中继缓存服务   ")
 	fmt.Println("==================================================")
 	fmt.Printf("协议兼容: LibreTranslate REST API (/translate)\n")
+	fmt.Printf("配置来源: %s\n", cfg.ConfigSource)
 	fmt.Printf("监听地址: http://%s:%s\n", cfg.ServerHost, cfg.ServerPort)
 	fmt.Printf("默认模型: %s (BaseURL: %s)\n", cfg.LLMModel, cfg.LLMBaseURL)
 	fmt.Printf("提示词版本: %s\n", cfg.PromptVersion)
 	if cfg.CustomPrompt != "" {
 		fmt.Println("提示词模式: 自定义 PROMPT (CUSTOM_PROMPT)")
 	} else {
-		fmt.Println("提示词模式: 内置调优 PROMPT (文学歌词翻译优化版)")
+		fmt.Println("提示词模式: 内置调优 PROMPT (文学词作增强版)")
 	}
+	fmt.Printf("简繁体偏好: %s\n", cfg.ChineseTargetDefault)
 	fmt.Printf("缓存数据库: %s (SQLite WAL Mode)\n", cfg.DBPath)
 	if cfg.LLMAPIKey == "" {
-		fmt.Println("[警告] 当前未检测到 LLM_API_KEY，请检查 .env 文件是否配置正确！")
+		fmt.Printf("[警告] 当前未检测到 API 密钥，请在 %s 中配置 llm.api_key！\n", cfg.ConfigSource)
 	} else {
 		fmt.Printf("API Key 状态: 已配置 (前缀: %s...)\n", maskKey(cfg.LLMAPIKey))
 	}

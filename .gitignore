@@ -1,6 +1,9 @@
 # 敏感配置文件
 .env
 *.local.env
+config.yaml
+config.yml
+config.json
 
 # 编译二进制与临时文件
 *.exe

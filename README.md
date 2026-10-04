@@ -41,52 +41,59 @@
 
 ## 🚀 快速上手
 
-### 1. 配置准备
+### 1. 配置方式
 
-克隆项目后，从示例模版创建本地配置文件：
+服务优先读取同目录下的 `config.yaml`，同时也完全兼容 `.env` 和系统环境变量（方便 Docker / 容器化注入）。
+
+#### 方式 A：使用 `config.yaml`（推荐，支持首次启动自动生成）
+- **首次运行自动生成**：直接运行可执行文件，若检测到未配置，程序会在当前目录下**自动生成**带有完整中文注释的 `config.yaml` 模版并提示你填入 Key。
+- **手动创建**：也可以直接拷贝示例文件：
+  ```bash
+  cp config.example.yaml config.yaml
+  ```
+  在 `config.yaml` 中填入你的大模型提供商 API 配置（以 DeepSeek 为例）：
+  ```yaml
+  server:
+    port: "5000"
+    host: "0.0.0.0"
+
+  llm:
+    base_url: "https://api.deepseek.com"
+    api_key: "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    model: "deepseek-flash"
+    temperature: 0.2
+    timeout_seconds: 60
+    max_retries: 2
+
+  lyrics:
+    chinese_target_default: "simplified"
+    # custom_prompt: "" # 留空使用内置文学级歌词Prompt
+  ```
+
+#### 方式 B：使用 `.env` 环境变量
+复制 `.env.example` 为 `.env` 并编辑对应环境变量即可。
+
+---
+
+### 2. 启动服务
 
 ```bash
-cp .env.example .env
-```
+# 默认按优先级自动查找 config.yaml / .env
+./ai-lyrics-translate
 
-编辑 `.env` 文件，填入你的大模型 API 配置（以 DeepSeek 为例）：
+# 或使用自定义路径的配置文件
+./ai-lyrics-translate -c /path/to/my_config.yaml
 
-```ini
-# 服务监听端口与地址
-SERVER_PORT=5000
-SERVER_HOST=0.0.0.0
-
-# LLM 配置 (兼容 OpenAI / DeepSeek / SiliconFlow / Ollama 等标准协议)
-LLM_BASE_URL=https://api.deepseek.com
-LLM_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-LLM_MODEL=deepseek-flash
-LLM_TEMPERATURE=0.2
-LLM_TIMEOUT_SECONDS=60
-LLM_MAX_RETRIES=2
-
-# 缓存与数据库
-DB_PATH=lyrics_cache.db
-PROMPT_VERSION=v1.0
-
-# 可选：自定义系统提示词（留空则默认使用系统内置的高品质歌词翻译Prompt）
-# CUSTOM_PROMPT=你是一位专业的歌词翻译家...
-
-# 可选：当客户端仅传入泛指的目标语言 "zh" 时，默认输出简体还是繁体 (simplified / traditional)
-CHINESE_TARGET_DEFAULT=simplified
-```
-
-### 2. 本地直接运行
-
-```bash
-# 运行服务
+# 或开发环境直接源码运行
 go run main.go
 ```
 
-启动后，控制台将输出服务就绪信息：
+启动后，控制台将输出服务就绪信息与配置来源：
 ```
 ==================================================
    AI-Lyrics-Translate 歌词翻译本地中继缓存服务   
 ==================================================
+配置文件来源: config.yaml
 协议兼容: LibreTranslate REST API (/translate)
 监听地址: http://0.0.0.0:5000
 默认模型: deepseek-flash (BaseURL: https://api.deepseek.com)

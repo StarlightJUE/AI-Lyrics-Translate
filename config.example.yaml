@@ -1,0 +1,39 @@
+# ==============================================================
+# AI-Lyrics-Translate 配置文件模版 (config.example.yaml)
+# 请复制本文件为 config.yaml 并填入你的真实配置
+# ==============================================================
+
+# 服务基础设置
+server:
+  host: "0.0.0.0"       # 监听地址
+  port: "5000"          # 监听端口 (兼容 LibreTranslate 默认 5000)
+
+# 大模型 API 设置 (兼容 OpenAI / DeepSeek / SiliconFlow / Ollama 等标准协议)
+llm:
+  base_url: "https://api.deepseek.com"  # API 根地址
+  api_key: "your_api_key_here"          # 你的大模型 API 密钥 (例如 sk-...)
+  model: "deepseek-flash"               # 默认调用的模型名称 (如 deepseek-flash / deepseek-chat)
+  temperature: 0.2                      # 采样温度 (0.0 ~ 1.0)
+  timeout_seconds: 60                   # 单次请求超时时间（秒）
+  max_retries: 2                        # 失败最大重试次数
+
+# 翻译与提示词设置
+translation:
+  # 当客户端仅传入泛指的 "zh" 时，默认输出简体还是繁体：
+  # 可选值: simplified (简体中文) / traditional (繁体中文)
+  # 注：若客户端明确传入了 zt 或 zh-Hant，系统会自动识别并翻译为繁体中文。
+  chinese_target_default: "simplified"
+  
+  # 提示词版本标识（当提示词重大更新时，修改此项可区分缓存）
+  prompt_version: "v1.0"
+  
+  # 自定义系统提示词（可选，留空则默认使用系统内置的高品质文学级歌词翻译Prompt）
+  # 支持占位符 {target} 代表目标语言
+  custom_prompt: ""
+
+# 本地 SQLite 缓存数据库设置
+storage:
+  db_path: "lyrics_cache.db"
+
+# 日志级别 (debug / info / warn / error)
+log_level: "info"
