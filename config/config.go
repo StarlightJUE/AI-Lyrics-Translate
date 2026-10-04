@@ -73,6 +73,11 @@ type FileConfig struct {
 		PromptVersion        string `yaml:"prompt_version" json:"prompt_version"`
 		CustomPrompt         string `yaml:"custom_prompt" json:"custom_prompt"`
 	} `yaml:"translation" json:"translation"`
+	Lyrics struct {
+		ChineseTargetDefault string `yaml:"chinese_target_default" json:"chinese_target_default"`
+		PromptVersion        string `yaml:"prompt_version" json:"prompt_version"`
+		CustomPrompt         string `yaml:"custom_prompt" json:"custom_prompt"`
+	} `yaml:"lyrics" json:"lyrics"`
 	Storage struct {
 		DBPath string `yaml:"db_path" json:"db_path"`
 	} `yaml:"storage" json:"storage"`
@@ -252,14 +257,29 @@ func loadFromFile(filePath string, cfg *Config) error {
 		cfg.LLMMaxRetries = f.LLM.MaxRetries
 	}
 
-	if f.Translation.ChineseTargetDefault != "" {
-		cfg.ChineseTargetDefault = f.Translation.ChineseTargetDefault
+	// 兼容 translation 或 lyrics 配置块
+	targetZh := f.Translation.ChineseTargetDefault
+	if targetZh == "" {
+		targetZh = f.Lyrics.ChineseTargetDefault
 	}
-	if f.Translation.PromptVersion != "" {
-		cfg.PromptVersion = f.Translation.PromptVersion
+	if targetZh != "" {
+		cfg.ChineseTargetDefault = targetZh
 	}
-	if f.Translation.CustomPrompt != "" {
-		cfg.CustomPrompt = f.Translation.CustomPrompt
+
+	pVer := f.Translation.PromptVersion
+	if pVer == "" {
+		pVer = f.Lyrics.PromptVersion
+	}
+	if pVer != "" {
+		cfg.PromptVersion = pVer
+	}
+
+	cPrompt := f.Translation.CustomPrompt
+	if cPrompt == "" {
+		cPrompt = f.Lyrics.CustomPrompt
+	}
+	if cPrompt != "" {
+		cfg.CustomPrompt = cPrompt
 	}
 
 	if f.Storage.DBPath != "" {
