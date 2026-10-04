@@ -1,0 +1,94 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"ai-lyrics-translate/config"
+	"ai-lyrics-translate/llm"
+	"ai-lyrics-translate/server"
+	"ai-lyrics-translate/storage"
+)
+
+func main() {
+	// 1. 加载配置（安全隔离环境变量）
+	cfg := config.LoadConfig()
+
+	fmt.Println("==================================================")
+	fmt.Println("   AI-Lyrics-Translate 歌词翻译本地中继缓存服务   ")
+	fmt.Println("==================================================")
+	fmt.Printf("协议兼容: LibreTranslate REST API (/translate)\n")
+	fmt.Printf("监听地址: http://%s:%s\n", cfg.ServerHost, cfg.ServerPort)
+	fmt.Printf("默认模型: %s (BaseURL: %s)\n", cfg.LLMModel, cfg.LLMBaseURL)
+	fmt.Printf("提示词版本: %s\n", cfg.PromptVersion)
+	if cfg.CustomPrompt != "" {
+		fmt.Println("提示词模式: 自定义 PROMPT (CUSTOM_PROMPT)")
+	} else {
+		fmt.Println("提示词模式: 内置调优 PROMPT (文学歌词翻译优化版)")
+	}
+	fmt.Printf("缓存数据库: %s (SQLite WAL Mode)\n", cfg.DBPath)
+	if cfg.LLMAPIKey == "" {
+		fmt.Println("[警告] 当前未检测到 LLM_API_KEY，请检查 .env 文件是否配置正确！")
+	} else {
+		fmt.Printf("API Key 状态: 已配置 (前缀: %s...)\n", maskKey(cfg.LLMAPIKey))
+	}
+	fmt.Println("==================================================")
+
+	// 2. 初始化本地 SQLite 缓存存储
+	store, err := storage.InitDB(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("初始化数据库失败: %v", err)
+	}
+	defer store.Close()
+
+	// 3. 初始化 LLM 客户端与 Server
+	llmClient := llm.NewClient(cfg)
+	srvInstance := server.NewServer(cfg, store, llmClient)
+
+	mux := http.NewServeMux()
+	srvInstance.RegisterRoutes(mux)
+
+	httpServer := &http.Server{
+		Addr:         fmt.Sprintf("%s:%s", cfg.ServerHost, cfg.ServerPort),
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 120 * time.Second, // 容纳大模型批量翻译可能带来的耗时
+		IdleTimeout:  120 * time.Second,
+	}
+
+	// 4. 优雅关闭监听
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		log.Printf("服务启动成功，等待客户端请求...")
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP 服务运行异常: %v", err)
+		}
+	}()
+
+	<-stopChan
+	log.Println("\n接收到关闭信号，正在安全停止服务并落盘缓存...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := httpServer.Shutdown(ctx); err != nil {
+		log.Printf("服务关闭出错: %v", err)
+	}
+	log.Println("服务已完全退出。")
+}
+
+func maskKey(key string) string {
+	if len(key) <= 6 {
+		return "******"
+	}
+	return key[:6]
+}

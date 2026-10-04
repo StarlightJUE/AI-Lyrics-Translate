@@ -1,0 +1,35 @@
+# 敏感配置文件
+.env
+*.local.env
+
+# 编译二进制与临时文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# SQLite 数据库与日志
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/
+
+# IDE 与编辑器文件
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 测试覆盖率与临时文件
+*.out
+*.test
+*.log
+
+# Python 临时与调试工具
+*.py
+*.pyc
+__pycache__/
