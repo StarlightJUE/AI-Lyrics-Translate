@@ -103,6 +103,7 @@ func main() {
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("服务关闭出错: %v", err)
 	}
+	srvInstance.Close()
 	log.Println("服务已完全退出。")
 }
 

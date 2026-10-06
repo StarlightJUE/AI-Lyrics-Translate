@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -18,17 +19,26 @@ import (
 
 // Server LibreTranslate 兼容服务
 type Server struct {
-	cfg     *config.Config
-	storage *storage.Storage
-	llm     *llm.Client
+	cfg      *config.Config
+	storage  *storage.Storage
+	llm      *llm.Client
+	inflight *InFlightManager
 }
 
 // NewServer 构造函数
 func NewServer(cfg *config.Config, store *storage.Storage, llmClient *llm.Client) *Server {
 	return &Server{
-		cfg:     cfg,
-		storage: store,
-		llm:     llmClient,
+		cfg:      cfg,
+		storage:  store,
+		llm:      llmClient,
+		inflight: NewInFlightManager(),
+	}
+}
+
+// Close 优雅停机，等待未完成的后台翻译任务落盘
+func (s *Server) Close() {
+	if s.inflight != nil {
+		s.inflight.WaitAll(5 * time.Second)
 	}
 }
 
@@ -193,6 +203,10 @@ func (s *Server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	if singleStr, ok := req.Q.(string); ok {
 		translated, err := s.translateSingleText(ctx, singleStr, sourceLang, resolvedTarget)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				// 客户端断开连接/切歌，大模型已在独立后台继续执行并落盘，无需报错
+				return
+			}
 			log.Printf("[ERROR] Translate error: %v", err)
 			http.Error(w, fmt.Sprintf("Translation failed: %v", err), http.StatusInternalServerError)
 			return
@@ -207,9 +221,15 @@ func (s *Server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	if slice, ok := req.Q.([]any); ok {
 		var results []string
 		for _, item := range slice {
+			if ctx.Err() != nil {
+				return
+			}
 			strVal := fmt.Sprintf("%v", item)
 			translated, err := s.translateSingleText(ctx, strVal, sourceLang, resolvedTarget)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
 				log.Printf("[ERROR] Translate slice item error: %v", err)
 				results = append(results, strVal) // 错误降级保留原文
 			} else {
@@ -226,8 +246,14 @@ func (s *Server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 	if slice, ok := req.Q.([]string); ok {
 		var results []string
 		for _, strVal := range slice {
+			if ctx.Err() != nil {
+				return
+			}
 			translated, err := s.translateSingleText(ctx, strVal, sourceLang, resolvedTarget)
 			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
 				log.Printf("[ERROR] Translate slice item error: %v", err)
 				results = append(results, strVal)
 			} else {
@@ -280,30 +306,47 @@ func (s *Server) translateSingleText(ctx context.Context, rawText, sourceLang, t
 
 	log.Printf("[CACHE MISS] Key=%s... | 纯歌词行数: %d | 正在请求模型: %s", cacheKey[:12], len(cleanLines), s.cfg.LLMModel)
 
-	// 4. 调用大模型批量翻译
-	translatedCleanLines, err := s.llm.TranslateBatch(ctx, cleanLines, sourceLang, targetLang)
+	// 计算超时时间（包含重试冗余与网络缓冲）
+	timeout := time.Duration(s.cfg.LLMTimeoutSeconds*(s.cfg.LLMMaxRetries+1)+15) * time.Second
+	if timeout < 60*time.Second {
+		timeout = 60 * time.Second
+	}
+
+	// 4. 调用并发协调器：并发去重并在脱离客户端生命周期的独立后台 Goroutine 中调用大模型与写缓存
+	translatedCleanLines, err := s.inflight.ExecuteOrAttach(ctx, cacheKey, timeout, func(bgCtx context.Context) ([]string, error) {
+		bgStart := time.Now()
+
+		// 4.1 调用大模型批量翻译
+		lines, err := s.llm.TranslateBatch(bgCtx, cleanLines, sourceLang, targetLang)
+		if err != nil {
+			return nil, fmt.Errorf("llm batch translation failed: %w", err)
+		}
+
+		// 4.2 写入 SQLite 本地缓存并落盘
+		cacheEntry := &storage.CachedTranslation{
+			CacheKey:       cacheKey,
+			SourceText:     normalizedText,
+			TranslatedText: strings.Join(lines, "\n"),
+			SourceLang:     sourceLang,
+			TargetLang:     targetLang,
+			ModelName:      s.cfg.LLMModel,
+			PromptVersion:  s.cfg.PromptVersion,
+		}
+
+		if err := s.storage.Set(cacheEntry); err != nil {
+			log.Printf("[WARN] Failed to save translation to cache: %v", err)
+		} else {
+			log.Printf("[CACHE SAVED] Key=%s... 已成功缓存至 SQLite (耗时: %v)", cacheKey[:12], time.Since(bgStart))
+		}
+
+		return lines, nil
+	})
+
 	if err != nil {
-		return "", fmt.Errorf("llm batch translation failed: %w", err)
+		return "", err
 	}
 
-	// 5. 写入 SQLite 本地缓存并落盘
-	cacheEntry := &storage.CachedTranslation{
-		CacheKey:       cacheKey,
-		SourceText:     normalizedText,
-		TranslatedText: strings.Join(translatedCleanLines, "\n"),
-		SourceLang:     sourceLang,
-		TargetLang:     targetLang,
-		ModelName:      s.cfg.LLMModel,
-		PromptVersion:  s.cfg.PromptVersion,
-	}
-
-	if err := s.storage.Set(cacheEntry); err != nil {
-		log.Printf("[WARN] Failed to save translation to cache: %v", err)
-	} else {
-		log.Printf("[CACHE SAVED] Key=%s... 已成功缓存至 SQLite", cacheKey[:12])
-	}
-
-	// 6. 重组时间轴与元数据并返回
+	// 5. 重组时间轴与元数据并返回
 	duration := time.Since(startTime)
 	log.Printf("[TRANSLATE SUCCESS] Key=%s... | 总耗时: %v", cacheKey[:12], duration)
 
