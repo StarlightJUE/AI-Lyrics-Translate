@@ -87,7 +87,7 @@ go run main.go
 启动成功后，控制台将显示服务就绪看板：
 ```text
 ==================================================
-   AI-Lyrics-Translate 歌词翻译本地中继缓存 (v1.0.0)
+   AI-Lyrics-Translate 歌词翻译本地中继缓存 (v1.0.1)
 ==================================================
 协议兼容: LibreTranslate REST API (/translate)
 配置来源: config.yaml

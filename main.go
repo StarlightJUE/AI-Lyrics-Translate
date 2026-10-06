@@ -18,7 +18,7 @@ import (
 	"ai-lyrics-translate/storage"
 )
 
-const AppVersion = "v1.0.0"
+const AppVersion = "v" + server.Version
 
 func main() {
 	// 命令行参数解析

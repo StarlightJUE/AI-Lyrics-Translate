@@ -17,6 +17,9 @@ import (
 	"ai-lyrics-translate/storage"
 )
 
+// Version 服务版本号
+const Version = "1.0.1"
+
 // Server LibreTranslate 兼容服务
 type Server struct {
 	cfg      *config.Config
@@ -104,7 +107,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"service":     "AI-Lyrics-Translate",
-		"version":     "1.0.0",
+		"version":     Version,
 		"protocol":    "LibreTranslate Standard",
 		"status":      "running",
 		"model":       s.cfg.LLMModel,
