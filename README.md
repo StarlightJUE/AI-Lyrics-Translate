@@ -1,5 +1,7 @@
 # AI-Lyrics-Translate 🎵
 
+[简体中文](README.md) | [English](README.en.md)
+
 > 针对音乐播放器与歌词插件深度优化的 **AI 歌词文学翻译与本地缓存中继服务**。  
 > 对外提供标准的 **LibreTranslate REST API** 规范，开箱即用无缝接入主流音乐播放器！
 
@@ -109,7 +111,8 @@ Web 管理面板: http://0.0.0.0:5000/ (或 /ui)
 # 服务基础设置
 server:
   host: "0.0.0.0"       # 监听地址 (局域网共享请保持 0.0.0.0)
-  port: "5000"          # 监听端口 (兼容 LibreTranslate 默认 5000)
+  port: "5000"          # 业务监听端口 (兼容 LibreTranslate 默认 5000)
+  admin_port: ""        # 管理后台独立端口 (留空则与业务端口共用，填入如 5001 则实现内外网物理端口隔离)
 
 # 双路大模型 API 设置 (支持 DeepSeek 与 Gemini，支持手动指定优先级与故障自动切换)
 llm:
@@ -135,7 +138,7 @@ llm:
       type: "gemini"                       # 协议类型: gemini (官方 REST) 或 openai (第三方兼容)
       base_url: "https://generativelanguage.googleapis.com/v1beta"
       api_key: "AIzaxxxxxxxx"               # Google Gemini API 密钥
-      model: "gemini-2.0-flash"             # 模型名称
+      model: "gemini-3.5-flash"             # 默认模型名称
       temperature: 0.2
       timeout_seconds: 60
       max_retries: 2
@@ -144,7 +147,8 @@ llm:
 translation:
   chinese_target_default: "simplified"     # 默认简繁体: simplified / traditional
   prompt_version: "v1.0"                   # 提示词版本标识
-  custom_prompt: ""                        # 用户自定义提示词（留空使用系统默认文学级歌词调优）
+  custom_meta_prompt: ""                   # 自定义元提示词骨架（留空使用系统内置框架）
+  custom_prompt: ""                        # 用户自定义审美提示词（留空使用系统默认文学级调优）
 
 # 本地 SQLite 缓存数据库设置
 storage:
