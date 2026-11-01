@@ -137,3 +137,123 @@ func (s *Storage) Close() error {
 	}
 	return nil
 }
+
+// List 分页查询缓存列表，支持按原歌词、翻译歌词或 Key 进行模糊搜索
+func (s *Storage) List(limit, offset int, keyword string) ([]*CachedTranslation, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var countQuery string
+	var listQuery string
+	var args []any
+	var countArgs []any
+
+	if keyword != "" {
+		pattern := "%" + keyword + "%"
+		countQuery = "SELECT COUNT(*) FROM lyrics_cache WHERE source_text LIKE ? OR translated_text LIKE ? OR cache_key LIKE ?"
+		countArgs = append(countArgs, pattern, pattern, pattern)
+		listQuery = `
+		SELECT cache_key, source_text, translated_text, source_lang, target_lang, model_name, prompt_version, created_at, updated_at
+		FROM lyrics_cache
+		WHERE source_text LIKE ? OR translated_text LIKE ? OR cache_key LIKE ?
+		ORDER BY updated_at DESC
+		LIMIT ? OFFSET ?;
+		`
+		args = append(args, pattern, pattern, pattern, limit, offset)
+	} else {
+		countQuery = "SELECT COUNT(*) FROM lyrics_cache"
+		listQuery = `
+		SELECT cache_key, source_text, translated_text, source_lang, target_lang, model_name, prompt_version, created_at, updated_at
+		FROM lyrics_cache
+		ORDER BY updated_at DESC
+		LIMIT ? OFFSET ?;
+		`
+		args = append(args, limit, offset)
+	}
+
+	var total int
+	if err := s.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count lyrics error: %w", err)
+	}
+
+	rows, err := s.db.Query(listQuery, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list lyrics error: %w", err)
+	}
+	defer rows.Close()
+
+	var list []*CachedTranslation
+	for rows.Next() {
+		var entry CachedTranslation
+		if err := rows.Scan(
+			&entry.CacheKey,
+			&entry.SourceText,
+			&entry.TranslatedText,
+			&entry.SourceLang,
+			&entry.TargetLang,
+			&entry.ModelName,
+			&entry.PromptVersion,
+			&entry.CreatedAt,
+			&entry.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("scan lyrics row error: %w", err)
+		}
+		list = append(list, &entry)
+	}
+
+	return list, total, nil
+}
+
+// UpdateTranslation 手动修改更新某条歌词的翻译内容
+func (s *Storage) UpdateTranslation(cacheKey, translatedText string) error {
+	updateSQL := `
+	UPDATE lyrics_cache
+	SET translated_text = ?, updated_at = CURRENT_TIMESTAMP
+	WHERE cache_key = ?;
+	`
+	res, err := s.db.Exec(updateSQL, translatedText, cacheKey)
+	if err != nil {
+		return fmt.Errorf("update translation error: %w", err)
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("cache key not found: %s", cacheKey)
+	}
+	return nil
+}
+
+// Delete 删除指定 cacheKey 的缓存记录
+func (s *Storage) Delete(cacheKey string) error {
+	deleteSQL := "DELETE FROM lyrics_cache WHERE cache_key = ?;"
+	_, err := s.db.Exec(deleteSQL, cacheKey)
+	if err != nil {
+		return fmt.Errorf("delete cache error: %w", err)
+	}
+	return nil
+}
+
+// DeleteAll 清空所有歌词缓存记录
+func (s *Storage) DeleteAll() error {
+	deleteSQL := "DELETE FROM lyrics_cache;"
+	_, err := s.db.Exec(deleteSQL)
+	if err != nil {
+		return fmt.Errorf("delete all cache error: %w", err)
+	}
+	return nil
+}
+
+// Count 获取当前缓存总条数
+func (s *Storage) Count() (int, error) {
+	var count int
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM lyrics_cache;").Scan(&count); err != nil {
+		return 0, fmt.Errorf("count cache error: %w", err)
+	}
+	return count, nil
+}

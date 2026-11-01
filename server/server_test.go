@@ -30,7 +30,15 @@ func setupTestServer(t *testing.T) (*Server, *storage.Storage, func()) {
 	cfg := &config.Config{
 		ServerPort:     "5000",
 		ServerHost:     "127.0.0.1",
-		LLMModel:       "deepseek-flash",
+		LLMPriority:    []string{"deepseek"},
+		LLMProviders: map[string]config.ProviderConfig{
+			"deepseek": {
+				Type:        "openai",
+				BaseURL:     "https://api.deepseek.com",
+				Model:       "deepseek-flash",
+				Temperature: 0.2,
+			},
+		},
 		PromptVersion:  "v1.0",
 		LLMTemperature: 0.2,
 	}
@@ -355,11 +363,17 @@ func TestClientSongSwitchCancellationAndCacheHit(t *testing.T) {
 	cfg := &config.Config{
 		ServerPort:        "5000",
 		ServerHost:        "127.0.0.1",
-		LLMBaseURL:        mockLLM.URL,
-		LLMAPIKey:         "test-key",
-		LLMModel:          "deepseek-flash",
-		LLMTimeoutSeconds: 5,
-		LLMMaxRetries:     1,
+		LLMPriority:       []string{"deepseek"},
+		LLMProviders: map[string]config.ProviderConfig{
+			"deepseek": {
+				Type:           "openai",
+				BaseURL:        mockLLM.URL,
+				APIKey:         "test-key",
+				Model:          "deepseek-flash",
+				TimeoutSeconds: 5,
+				MaxRetries:     1,
+			},
+		},
 		PromptVersion:     "v1.0",
 	}
 
@@ -373,7 +387,7 @@ func TestClientSongSwitchCancellationAndCacheHit(t *testing.T) {
 	clientCtx1, cancel1 := context.WithCancel(context.Background())
 	time.AfterFunc(20*time.Millisecond, cancel1)
 
-	_, err1 := srv.translateSingleText(clientCtx1, rawLrc, "en", "zh-Hans")
+	_, err1 := srv.translateSingleText(clientCtx1, rawLrc, "en", "zh-Hans", false)
 	if !errors.Is(err1, context.Canceled) {
 		t.Fatalf("expected context.Canceled for switched song, got: %v", err1)
 	}
@@ -394,7 +408,7 @@ func TestClientSongSwitchCancellationAndCacheHit(t *testing.T) {
 
 	// 步骤 3：模拟客户端切歌切回这首歌（正常发起请求）
 	clientCtx2 := context.Background()
-	res2, err2 := srv.translateSingleText(clientCtx2, rawLrc, "en", "zh-Hans")
+	res2, err2 := srv.translateSingleText(clientCtx2, rawLrc, "en", "zh-Hans", false)
 	if err2 != nil {
 		t.Fatalf("unexpected error on second request: %v", err2)
 	}
@@ -407,6 +421,155 @@ func TestClientSongSwitchCancellationAndCacheHit(t *testing.T) {
 	// 验证大模型 API 调用次数：全程只调用了一次，切回来直接命中缓存（0 MISS，0 重复调用）！
 	if count := atomic.LoadInt32(&llmCallCount); count != 1 {
 		t.Fatalf("expected LLM to be called only 1 time throughout both requests, got: %d", count)
+	}
+}
+
+// TestWebUIAndManagementAPIs 验证单页面 Web 前端展示及歌词增删改查、提示词与优先级接口
+func TestWebUIAndManagementAPIs(t *testing.T) {
+	srv, store, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// 1. 验证浏览器访问 / 返回 HTML 单页面
+	reqUI := httptest.NewRequest("GET", "/", nil)
+	reqUI.Header.Set("Accept", "text/html,application/xhtml+xml")
+	wUI := httptest.NewRecorder()
+	mux.ServeHTTP(wUI, reqUI)
+	if wUI.Code != http.StatusOK || !strings.Contains(wUI.Body.String(), "AI-Lyrics-Translate") {
+		t.Errorf("expected HTML Web UI, got status %d, body: %s", wUI.Code, wUI.Body.String()[:100])
+	}
+
+	// 2. 验证非 HTML 访问 / 返回系统 JSON 状态
+	reqJSON := httptest.NewRequest("GET", "/", nil)
+	reqJSON.Header.Set("Accept", "application/json")
+	wJSON := httptest.NewRecorder()
+	mux.ServeHTTP(wJSON, reqJSON)
+	if wJSON.Code != http.StatusOK || !strings.Contains(wJSON.Body.String(), `"service":"AI-Lyrics-Translate"`) {
+		t.Errorf("expected JSON status, got: %s", wJSON.Body.String())
+	}
+
+	// 3. 预先向存储中塞入一条歌词
+	testKey := "testkey12345678"
+	_ = store.Set(&storage.CachedTranslation{
+		CacheKey:       testKey,
+		SourceText:     "First line\nSecond line",
+		TranslatedText: "第一行\n第二行",
+		TargetLang:     "zh-Hans",
+		ModelName:      "deepseek-flash",
+	})
+
+	// 4. GET /api/lyrics 查询列表
+	reqList := httptest.NewRequest("GET", "/api/lyrics?limit=10", nil)
+	wList := httptest.NewRecorder()
+	mux.ServeHTTP(wList, reqList)
+	if wList.Code != http.StatusOK {
+		t.Fatalf("GET /api/lyrics failed: %d", wList.Code)
+	}
+	var listResp struct {
+		Total int `json:"total"`
+		Items []struct {
+			CacheKey string `json:"cache_key"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(wList.Body.Bytes(), &listResp)
+	if listResp.Total != 1 || len(listResp.Items) != 1 || listResp.Items[0].CacheKey != testKey {
+		t.Fatalf("unexpected list response: %#v", listResp)
+	}
+
+	// 5. PUT /api/lyrics 修改歌词
+	putBody, _ := json.Marshal(map[string]string{
+		"key":             testKey,
+		"translated_text": "第一行（已修改）\n第二行（已修改）",
+	})
+	reqPut := httptest.NewRequest("PUT", "/api/lyrics", bytes.NewBuffer(putBody))
+	reqPut.Header.Set("Content-Type", "application/json")
+	wPut := httptest.NewRecorder()
+	mux.ServeHTTP(wPut, reqPut)
+	if wPut.Code != http.StatusOK {
+		t.Fatalf("PUT /api/lyrics failed: %d", wPut.Code)
+	}
+
+	// 校验修改生效
+	updated, _ := store.Get(testKey)
+	if updated.TranslatedText != "第一行（已修改）\n第二行（已修改）" {
+		t.Errorf("lyrics text was not updated: %s", updated.TranslatedText)
+	}
+
+	// 6. GET /api/config 获取配置
+	reqCfg := httptest.NewRequest("GET", "/api/config", nil)
+	wCfg := httptest.NewRecorder()
+	mux.ServeHTTP(wCfg, reqCfg)
+	if wCfg.Code != http.StatusOK {
+		t.Fatalf("GET /api/config failed: %d", wCfg.Code)
+	}
+
+	// 7. POST /api/config 更新用户提示词与优先级
+	postCfgBody, _ := json.Marshal(map[string]any{
+		"user_prompt": "更新后的诗意提示词",
+		"priority":    []string{"deepseek"},
+	})
+	reqPostCfg := httptest.NewRequest("POST", "/api/config", bytes.NewBuffer(postCfgBody))
+	reqPostCfg.Header.Set("Content-Type", "application/json")
+	wPostCfg := httptest.NewRecorder()
+	mux.ServeHTTP(wPostCfg, reqPostCfg)
+	if wPostCfg.Code != http.StatusOK {
+		t.Fatalf("POST /api/config failed: %d", wPostCfg.Code)
+	}
+	if srv.cfg.GetUserPrompt() != "更新后的诗意提示词" {
+		t.Errorf("expected user prompt to be updated, got: %s", srv.cfg.GetUserPrompt())
+	}
+
+	// 8. DELETE /api/lyrics?key=... 删除单条
+	reqDel := httptest.NewRequest("DELETE", "/api/lyrics?key="+testKey, nil)
+	wDel := httptest.NewRecorder()
+	mux.ServeHTTP(wDel, reqDel)
+	if wDel.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/lyrics failed: %d", wDel.Code)
+	}
+	count, _ := store.Count()
+	if count != 0 {
+		t.Errorf("expected 0 entries after delete, got %d", count)
+	}
+}
+
+// TestRomanizeDetection 验证日韩语转罗马音请求参数识别
+func TestRomanizeDetection(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// 1. Query: ?romaji=true
+	r1 := httptest.NewRequest("POST", "/translate?romaji=true", nil)
+	if !srv.checkRomanizeRequest(r1, nil) {
+		t.Errorf("failed to detect romaji=true query")
+	}
+
+	// 2. Query: ?romanize=1
+	r2 := httptest.NewRequest("POST", "/translate?romanize=1", nil)
+	if !srv.checkRomanizeRequest(r2, nil) {
+		t.Errorf("failed to detect romanize=1 query")
+	}
+
+	// 3. Target: romaji
+	reqTarget := &TranslateRequest{Target: "romaji"}
+	r3 := httptest.NewRequest("POST", "/translate", nil)
+	if !srv.checkRomanizeRequest(r3, reqTarget) {
+		t.Errorf("failed to detect target=romaji")
+	}
+
+	// 4. Header: X-Lyrics-Romanize: true
+	r4 := httptest.NewRequest("POST", "/translate", nil)
+	r4.Header.Set("X-Lyrics-Romanize", "true")
+	if !srv.checkRomanizeRequest(r4, nil) {
+		t.Errorf("failed to detect X-Lyrics-Romanize header")
+	}
+
+	// 5. Normal translate without romanize flag
+	r5 := httptest.NewRequest("POST", "/translate", nil)
+	reqNormal := &TranslateRequest{Target: "zh"}
+	if srv.checkRomanizeRequest(r5, reqNormal) {
+		t.Errorf("should not detect romanize for normal request")
 	}
 }
 

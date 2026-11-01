@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI-Lyrics-Translate 控制台</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+      --danger-hover: #dc2626;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 40px;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .header-title { display: flex; align-items: center; gap: 12px; }
+    .header-title h1 { font-size: 1.25rem; font-weight: 700; color: #0f172a; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      background: #e0e7ff;
+      color: var(--primary);
+    }
+    .badge-status {
+      background: #dcfce7;
+      color: #15803d;
+      gap: 6px;
+    }
+    .badge-status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+    .nav-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      padding: 10px 18px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: var(--primary); }
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #0f172a;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat-label { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 6px; }
+    .stat-value { font-size: 1.4rem; font-weight: 700; color: #0f172a; }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .search-input {
+      padding: 8px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.9rem;
+      width: 280px;
+      outline: none;
+      transition: border 0.2s;
+    }
+    .search-input:focus { border-color: var(--primary); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: #fee2e2; color: var(--danger); border-color: #fecaca; }
+    .btn-danger:hover { background: var(--danger); color: #fff; }
+    .btn-secondary { background: #f1f5f9; color: #475569; }
+    .btn-secondary:hover { background: #e2e8f0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.875rem;
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    tr:hover { background: #f8fafc; }
+    .lyrics-preview {
+      max-width: 260px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-muted);
+    }
+    .key-tag {
+      font-family: monospace;
+      font-size: 0.75rem;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #334155;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+      line-height: 1.6;
+    }
+    textarea:focus, input[type="text"]:focus { border-color: var(--primary); }
+    .form-group { margin-bottom: 16px; }
+    .form-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: #334155;
+    }
+    .form-help {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.5);
+      backdrop-filter: blur(4px);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 900px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .modal-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .priority-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .priority-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 18px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+    .priority-item.active-first {
+      border-color: #c7d2fe;
+      background: #eef2ff;
+    }
+
+    .lang-select {
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      font-size: 0.85rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    #toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 200;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .toast {
+      padding: 10px 18px;
+      border-radius: 8px;
+      background: #1e293b;
+      color: #fff;
+      font-size: 0.875rem;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+      animation: slideIn 0.2s ease-out;
+    }
+    .toast.success { background: #059669; }
+    .toast.error { background: #dc2626; }
+    @keyframes slideIn { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-title">
+      <h1>AI-Lyrics-Translate</h1>
+      <span class="badge" id="version-badge">v1.1.0</span>
+      <span class="badge badge-status" data-i18n="status_running">服务运行中</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <!-- i18n 语言选择器 -->
+      <select id="i18n-selector" class="lang-select" onchange="changeLanguage(this.value)">
+        <option value="zh">🇨🇳 简体中文</option>
+        <option value="zh-TW">🇭🇰/🇹🇼 繁體中文</option>
+        <option value="en">🇺🇸 English</option>
+        <option value="ja">🇯🇵 日本語</option>
+        <option value="ko">🇰🇷 한국어</option>
+      </select>
+      <button class="btn btn-secondary" onclick="loadAllData()" data-i18n="btn_refresh">
+        刷新数据
+      </button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-label" data-i18n="stat_cached_count">已缓存歌曲总数</div>
+        <div class="stat-value" id="stat-count">-</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label" data-i18n="stat_primary_model">首选主用模型 (Priority #1)</div>
+        <div class="stat-value" id="stat-model" style="font-size: 1.15rem; color: var(--primary);">-</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label" data-i18n="stat_backup_model">故障备份模型 (Priority #2)</div>
+        <div class="stat-value" id="stat-backup-model" style="font-size: 1.15rem; color: #0284c7;">-</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-label" data-i18n="stat_romaji_support">日韩罗马音支持</div>
+        <div class="stat-value" style="font-size: 1.15rem; color: #16a34a;" data-i18n="stat_romaji_ready">就绪 (?romaji=true)</div>
+      </div>
+    </div>
+
+    <div class="nav-tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-lyrics', this)" data-i18n="tab_lyrics">歌词缓存管理</button>
+      <button class="tab-btn" onclick="switchTab('tab-prompts', this)" data-i18n="tab_prompts">提示词设置 (Prompts)</button>
+      <button class="tab-btn" onclick="switchTab('tab-models', this)" data-i18n="tab_models">双路大模型与配置</button>
+    </div>
+
+    <!-- 1. 歌词缓存管理 Tab -->
+    <div id="tab-lyrics" class="tab-content active">
+      <div class="card">
+        <div class="toolbar">
+          <input type="text" id="lyrics-search" class="search-input" placeholder="搜索原歌词、译文或 Hash..." data-i18n-placeholder="search_placeholder" oninput="handleSearch()">
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-danger" onclick="confirmDeleteAll()" data-i18n="btn_clear_all">清空全部缓存</button>
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 120px;" data-i18n="th_cache_key">Cache Key</th>
+                <th data-i18n="th_source_preview">原文预览</th>
+                <th data-i18n="th_trans_preview">翻译预览</th>
+                <th style="width: 80px;" data-i18n="th_target_lang">目标语言</th>
+                <th style="width: 150px;" data-i18n="th_model">翻译模型</th>
+                <th style="width: 140px;" data-i18n="th_updated_at">更新时间</th>
+                <th style="width: 160px; text-align: right;" data-i18n="th_actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="lyrics-tbody">
+              <tr><td colspan="7" style="text-align: center; color: var(--text-muted);" data-i18n="loading_lyrics">正在加载歌词缓存数据...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 提示词设置 Tab -->
+    <div id="tab-prompts" class="tab-content">
+      <!-- 元提示词 (可编辑) -->
+      <div class="card">
+        <div class="card-title">
+          <span data-i18n="title_meta_prompt">元提示词 (Meta Prompt)</span>
+          <span class="badge" style="background:#f1f5f9; color:#475569;" data-i18n="badge_meta_prompt">可编辑系统框架 · 行数与防泄漏约束</span>
+        </div>
+        <div class="form-group">
+          <textarea id="meta-prompt-edit" rows="9"></textarea>
+          <div class="form-help" data-i18n="help_meta_prompt">负责严格 1:1 行数对应、纯净格式输出、原文语言保护，以及<b>严禁在输出中包含背景信息</b>的核心纪律。</div>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button class="btn btn-secondary" onclick="resetMetaPrompt()" data-i18n="btn_reset_meta">恢复默认元提示词</button>
+          <button class="btn btn-primary" onclick="saveMetaPrompt()" data-i18n="btn_save_meta">保存元提示词</button>
+        </div>
+      </div>
+
+      <!-- 用户提示词 (可编辑，默认回显当前文学调优) -->
+      <div class="card">
+        <div class="card-title">
+          <span data-i18n="title_user_prompt">用户提示词 (User Prompt)</span>
+          <span class="badge" data-i18n="badge_user_prompt">文学审美调优 · 实时生效</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" data-i18n="label_user_prompt">当前文学审美与润色指令：</label>
+          <textarea id="user-prompt-edit" rows="10"></textarea>
+          <div class="form-help" data-i18n="help_user_prompt">系统请求时会自动将【元提示词】与【用户提示词】拼接传给大模型。此处直接回显当前生效的提示词，修改后点击保存立即写入配置文件生效。</div>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button class="btn btn-secondary" onclick="resetUserPrompt()" data-i18n="btn_reset_user">恢复默认调优提示词</button>
+          <button class="btn btn-primary" onclick="saveUserPrompt()" data-i18n="btn_save_user">保存用户提示词</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 双路大模型与配置 Tab -->
+    <div id="tab-models" class="tab-content">
+      <!-- 管理端口配置 -->
+      <div class="card">
+        <div class="card-title" data-i18n="title_server_settings">服务与管理端口配置</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label class="form-label" data-i18n="label_admin_port">管理控制台独立端口 (admin_port)</label>
+            <input type="text" id="admin-port-input" placeholder="例如 5001 (留空则与业务端口共用)">
+            <div class="form-help" data-i18n="help_admin_port">若填写独立端口，管理页面将监听在此端口；留空则继续与 LibreTranslate 业务端口 (5000) 共用。修改后保存至 config.yaml，重启生效。</div>
+          </div>
+          <div style="display: flex; align-items: flex-end; margin-bottom: 16px;">
+            <button class="btn btn-primary" onclick="saveAdminPort()" data-i18n="btn_save_admin_port">保存端口配置</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 优先级 -->
+      <div class="card">
+        <div class="card-title">
+          <span data-i18n="title_priority">双路大模型调用优先级 (Failover Chain)</span>
+          <button class="btn btn-secondary" onclick="swapPriority()" data-i18n="btn_swap_priority">切换主备顺序</button>
+        </div>
+        <div class="priority-list" id="priority-container"></div>
+        <div class="form-help" data-i18n="help_priority">说明：请求歌词翻译时，系统将严格按照上述顺序依次尝试。当首选模型遇到超时、5xx 或网络故障时，将自动平滑降级切换至下一个模型并写入缓存。</div>
+      </div>
+
+      <!-- 提供商列表与编辑 -->
+      <div class="card">
+        <div class="card-title" data-i18n="title_providers">提供商详细状态与在线配置修改</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px;" id="providers-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑歌词模态框 -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title" data-i18n="modal_edit_title">查看与修改歌词</h3>
+        <button class="btn btn-secondary" style="padding: 4px 8px;" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div>
+          <div class="form-label" data-i18n="modal_source_label">规范化原文 (Source Text)</div>
+          <textarea id="modal-source" rows="16" readonly style="background: #f8fafc; color: #475569;"></textarea>
+        </div>
+        <div>
+          <div class="form-label" data-i18n="modal_trans_label">译文 / 罗马音 (可手动编辑修改)</div>
+          <textarea id="modal-translated" rows="16"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()" data-i18n="btn_cancel">取消</button>
+        <button class="btn btn-primary" onclick="saveEditedLyrics()" data-i18n="btn_save_lyrics">保存修改</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+
+  <script>
+    // i18n 语言词典 (中 / 英 / 日 / 韩)
+    const I18N = {
+      zh: {
+        status_running: "服务运行中",
+        btn_refresh: "刷新数据",
+        stat_cached_count: "已缓存歌曲总数",
+        stat_primary_model: "首选主用模型 (Priority #1)",
+        stat_backup_model: "故障备份模型 (Priority #2)",
+        stat_romaji_support: "日韩罗马音支持",
+        stat_romaji_ready: "就绪 (?romaji=true)",
+        tab_lyrics: "歌词缓存管理",
+        tab_prompts: "提示词设置 (Prompts)",
+        tab_models: "双路大模型与配置",
+        search_placeholder: "搜索原歌词、译文或 Hash...",
+        btn_clear_all: "清空全部缓存",
+        th_cache_key: "Cache Key",
+        th_source_preview: "原文预览",
+        th_trans_preview: "翻译预览",
+        th_target_lang: "目标语言",
+        th_model: "翻译模型",
+        th_updated_at: "更新时间",
+        th_actions: "操作",
+        loading_lyrics: "正在加载歌词缓存数据...",
+        no_lyrics: "暂无歌词缓存记录",
+        btn_edit: "编辑",
+        btn_delete: "删除",
+        title_meta_prompt: "元提示词 (Meta Prompt)",
+        badge_meta_prompt: "可编辑系统框架 · 行数与防泄漏约束",
+        help_meta_prompt: "负责严格 1:1 行数对应、纯净格式输出、原文语言保护，以及<b>严禁在输出中包含背景信息</b>的核心纪律。",
+        btn_reset_meta: "恢复默认元提示词",
+        btn_save_meta: "保存元提示词",
+        title_user_prompt: "用户提示词 (User Prompt)",
+        badge_user_prompt: "文学审美调优 · 实时生效",
+        label_user_prompt: "当前文学审美与润色指令：",
+        help_user_prompt: "系统请求时会自动将【元提示词】与【用户提示词】拼接传给大模型。此处直接回显当前生效的提示词，修改后点击保存立即写入配置文件生效。",
+        btn_reset_user: "恢复默认调优提示词",
+        btn_save_user: "保存用户提示词",
+        title_server_settings: "服务与管理端口配置",
+        label_admin_port: "管理控制台独立端口 (admin_port)",
+        help_admin_port: "若填写独立端口，管理页面将监听在此端口；留空则继续与 LibreTranslate 业务端口 (5000) 共用。修改后保存至 config.yaml，重启生效。",
+        btn_save_admin_port: "保存端口配置",
+        title_priority: "双路大模型调用优先级 (Failover Chain)",
+        btn_swap_priority: "切换主备顺序",
+        help_priority: "说明：请求歌词翻译时，系统将严格按照上述顺序依次尝试。当首选模型遇到超时、5xx 或网络故障时，将自动平滑降级切换至下一个模型并写入缓存。",
+        title_providers: "提供商详细状态与在线配置修改",
+        modal_edit_title: "查看与修改歌词",
+        modal_source_label: "规范化原文 (Source Text)",
+        modal_trans_label: "译文 / 罗马音 (可手动编辑修改)",
+        btn_cancel: "取消",
+        btn_save_lyrics: "保存修改",
+        toast_meta_saved: "元提示词已成功保存！",
+        toast_user_saved: "用户提示词已成功保存！",
+        toast_port_saved: "管理端口已保存至配置文件！",
+        toast_swap_priority: "已成功切换主备模型优先级！",
+        toast_lyrics_saved: "歌词已手动更新！下一次切歌将直接命中新歌词。",
+        toast_lyrics_deleted: "歌词缓存已删除",
+        toast_all_cleared: "全部歌词缓存已清空",
+        confirm_delete_all: "警告：确定要清空全部歌词缓存吗？此操作无法撤销！",
+        confirm_delete_item: "确定要删除此条歌词缓存吗？",
+        key_configured: "● API Key 已配置",
+        key_missing: "○ 未配置 Key",
+        btn_save_provider: "保存提供商配置",
+        prov_key_label: "API Key (填入覆盖)",
+        prov_key_placeholder: "未配置，请输入 API Key",
+        toast_provider_saved: "配置已成功保存至 config.yaml！",
+        confirm_reset_meta: "确定要恢复为内置默认元提示词吗？",
+        confirm_reset_user: "确定要恢复为内置默认调优提示词吗？"
+      },
+      "zh-TW": {
+        status_running: "服務運行中",
+        btn_refresh: "重新整理",
+        stat_cached_count: "已快取歌曲總數",
+        stat_primary_model: "首選主用模型 (Priority #1)",
+        stat_backup_model: "故障備援模型 (Priority #2)",
+        stat_romaji_support: "日韓羅馬音支援",
+        stat_romaji_ready: "就緒 (?romaji=true)",
+        tab_lyrics: "歌詞快取管理",
+        tab_prompts: "提示詞設定 (Prompts)",
+        tab_models: "雙路大模型與配置",
+        search_placeholder: "搜尋原歌詞、譯文或 Hash...",
+        btn_clear_all: "清除全部快取",
+        th_cache_key: "Cache Key",
+        th_source_preview: "原文預覽",
+        th_trans_preview: "翻譯預覽",
+        th_target_lang: "目標語言",
+        th_model: "翻譯模型",
+        th_updated_at: "更新時間",
+        th_actions: "操作",
+        loading_lyrics: "正在載入歌詞快取資料...",
+        no_lyrics: "尚無歌詞快取記錄",
+        btn_edit: "編輯",
+        btn_delete: "刪除",
+        title_meta_prompt: "元提示詞 (Meta Prompt)",
+        badge_meta_prompt: "可編輯系統框架 · 行數與防洩漏約束",
+        help_meta_prompt: "負責嚴格 1:1 行數對應、純淨格式輸出、原文語言保護，以及<b>嚴禁在輸出中包含背景資訊</b>的核心紀律。",
+        btn_reset_meta: "恢復預設元提示詞",
+        btn_save_meta: "儲存元提示詞",
+        title_user_prompt: "使用者提示詞 (User Prompt)",
+        badge_user_prompt: "文學審美調優 · 即時生效",
+        label_user_prompt: "目前文學審美與潤色指令：",
+        help_user_prompt: "系統請求時會自動將【元提示詞】與【使用者提示詞】拼接傳給大模型。此處直接回顯目前生效的提示詞，修改後點擊儲存立即寫入設定檔生效。",
+        btn_reset_user: "恢復預設調優提示詞",
+        btn_save_user: "儲存使用者提示詞",
+        title_server_settings: "服務與管理埠號設定",
+        label_admin_port: "管理控制台獨立埠號 (admin_port)",
+        help_admin_port: "若填寫獨立埠號，管理頁面將監聽在此埠號；留空則繼續與 LibreTranslate 業務埠號 (5000) 共用。修改後儲存至 config.yaml，重啟生效。",
+        btn_save_admin_port: "儲存埠號設定",
+        title_priority: "雙路大模型呼叫優先級 (Failover Chain)",
+        btn_swap_priority: "切換主備順序",
+        help_priority: "說明：請求歌詞翻譯時，系統將嚴格按照上述順序依序嘗試。當首選模型遇到逾時、5xx 或網路故障時，將自動平滑降級切換至下一個模型並寫入快取。",
+        title_providers: "提供商詳細狀態與線上配置修改",
+        modal_edit_title: "檢視與修改歌詞",
+        modal_source_label: "規範化原文 (Source Text)",
+        modal_trans_label: "譯文 / 羅馬音 (可手動編輯修改)",
+        btn_cancel: "取消",
+        btn_save_lyrics: "儲存修改",
+        toast_meta_saved: "元提示詞已成功儲存！",
+        toast_user_saved: "使用者提示詞已成功儲存！",
+        toast_port_saved: "管理埠號已儲存至設定檔！",
+        toast_swap_priority: "已成功切換主備模型優先級！",
+        toast_lyrics_saved: "歌詞已手動更新！下一次切歌將直接命中新歌詞。",
+        toast_lyrics_deleted: "歌詞快取已刪除",
+        toast_all_cleared: "全部歌詞快取已清除",
+        confirm_delete_all: "警告：確定要清除全部歌詞快取嗎？此操作無法撤銷！",
+        confirm_delete_item: "確定要刪除此條歌詞快取嗎？",
+        key_configured: "● API Key 已設定",
+        key_missing: "○ 未設定 Key",
+        btn_save_provider: "儲存提供商設定",
+        prov_key_label: "API Key (填入覆蓋)",
+        prov_key_placeholder: "未設定，請輸入 API Key",
+        toast_provider_saved: "設定已成功儲存至 config.yaml！",
+        confirm_reset_meta: "確定要恢復為內建預設元提示詞嗎？",
+        confirm_reset_user: "確定要恢復為內建預設調優提示詞嗎？"
+      },
+      en: {
+        status_running: "Service Running",
+        btn_refresh: "Refresh Data",
+        stat_cached_count: "Total Cached Songs",
+        stat_primary_model: "Primary Model (Priority #1)",
+        stat_backup_model: "Backup Model (Priority #2)",
+        stat_romaji_support: "Romaji Support",
+        stat_romaji_ready: "Ready (?romaji=true)",
+        tab_lyrics: "Lyrics Cache",
+        tab_prompts: "Prompts Settings",
+        tab_models: "Models & Config",
+        search_placeholder: "Search lyrics, translation or hash...",
+        btn_clear_all: "Clear All Cache",
+        th_cache_key: "Cache Key",
+        th_source_preview: "Source Preview",
+        th_trans_preview: "Translation Preview",
+        th_target_lang: "Target",
+        th_model: "Model",
+        th_updated_at: "Updated At",
+        th_actions: "Actions",
+        loading_lyrics: "Loading cached lyrics...",
+        no_lyrics: "No cached lyrics found",
+        btn_edit: "Edit",
+        btn_delete: "Delete",
+        title_meta_prompt: "Meta Prompt",
+        badge_meta_prompt: "Editable Framework · Line Alignment & Protection",
+        help_meta_prompt: "Enforces strict 1:1 line correspondence, pure text output, and <b>strictly prohibits outputting background info</b>.",
+        btn_reset_meta: "Reset to Default Meta",
+        btn_save_meta: "Save Meta Prompt",
+        title_user_prompt: "User Prompt",
+        badge_user_prompt: "Poetic & Stylistic Tuning · Live",
+        label_user_prompt: "Current Literary & Poetic Translation Instructions:",
+        help_user_prompt: "The system automatically concatenates [Meta Prompt] and [User Prompt]. Displays the current active prompt; modify and save to update config.yaml directly.",
+        btn_reset_user: "Reset to Default Style",
+        btn_save_user: "Save User Prompt",
+        title_server_settings: "Server & Admin Port Settings",
+        label_admin_port: "Dedicated Admin Console Port (admin_port)",
+        help_admin_port: "If set, the web console listens on this port; leave empty to share the business port (5000). Takes effect on restart.",
+        btn_save_admin_port: "Save Admin Port",
+        title_priority: "Dual Model Priority (Failover Chain)",
+        btn_swap_priority: "Swap Priority",
+        help_priority: "Note: The system tries models in order. Automatically fails over to the next priority on timeout, 5xx, or network issues.",
+        title_providers: "Provider Status & Configuration",
+        modal_edit_title: "View & Edit Lyrics",
+        modal_source_label: "Normalized Source Text",
+        modal_trans_label: "Translation / Romaji (Editable)",
+        btn_cancel: "Cancel",
+        btn_save_lyrics: "Save Changes",
+        toast_meta_saved: "Meta prompt saved successfully!",
+        toast_user_saved: "User prompt saved successfully!",
+        toast_port_saved: "Admin port saved to config file!",
+        toast_swap_priority: "Model priority swapped successfully!",
+        toast_lyrics_saved: "Lyrics updated! Next playback will hit the new translation.",
+        toast_lyrics_deleted: "Lyrics cache deleted",
+        toast_all_cleared: "All lyrics cache cleared",
+        confirm_delete_all: "Warning: Are you sure you want to clear all lyrics cache? This cannot be undone!",
+        confirm_delete_item: "Are you sure you want to delete this lyrics cache?",
+        key_configured: "● API Key Configured",
+        key_missing: "○ Key Missing",
+        btn_save_provider: "Save Provider",
+        prov_key_label: "API Key (Fill to overwrite)",
+        prov_key_placeholder: "Not set, please enter API Key",
+        toast_provider_saved: "configuration saved to config.yaml!",
+        confirm_reset_meta: "Are you sure you want to restore the default meta prompt?",
+        confirm_reset_user: "Are you sure you want to restore the default tuning prompt?"
+      },
+      ja: {
+        status_running: "サービス稼働中",
+        btn_refresh: "更新",
+        stat_cached_count: "キャッシュ曲数",
+        stat_primary_model: "優先モデル (Priority #1)",
+        stat_backup_model: "フェイルオーバー (Priority #2)",
+        stat_romaji_support: "日韓ローマ字変換",
+        stat_romaji_ready: "対応完了 (?romaji=true)",
+        tab_lyrics: "歌詞キャッシュ管理",
+        tab_prompts: "プロンプト設定",
+        tab_models: "モデルと構成",
+        search_placeholder: "歌詞、翻訳、ハッシュを検索...",
+        btn_clear_all: "すべて削除",
+        th_cache_key: "Cache Key",
+        th_source_preview: "原文プレビュー",
+        th_trans_preview: "翻訳プレビュー",
+        th_target_lang: "言語",
+        th_model: "モデル",
+        th_updated_at: "更新日時",
+        th_actions: "操作",
+        loading_lyrics: "歌詞データを読み込み中...",
+        no_lyrics: "キャッシュされた歌詞はありません",
+        btn_edit: "編集",
+        btn_delete: "削除",
+        title_meta_prompt: "メタプロンプト (Meta Prompt)",
+        badge_meta_prompt: "編集可能フレームワーク · 行数厳守・情報漏洩防止",
+        help_meta_prompt: "1:1の厳格な行数対応、マークダウンなしの純粋な出力、および<b>出力に背景情報を含めない</b>制約を制御します。",
+        btn_reset_meta: "デフォルトに戻す",
+        btn_save_meta: "メタプロンプトを保存",
+        title_user_prompt: "ユーザープロンプト (User Prompt)",
+        badge_user_prompt: "文学的表現調律 · 即時反映",
+        label_user_prompt: "現在の文学的翻訳指示：",
+        help_user_prompt: "メタプロンプトとユーザープロンプトを連結してLLMに送信します。現在の指示が表示され、変更保存すると設定ファイルに書き込まれます。",
+        btn_reset_user: "デフォルト表現に戻す",
+        btn_save_user: "プロンプトを保存",
+        title_server_settings: "サーバー及び管理ポート設定",
+        label_admin_port: "独立管理ポート (admin_port)",
+        help_admin_port: "指定した場合、管理画面はこのポートで動作します。空の場合は業務ポート(5000)と共用します。再起動で反映。",
+        btn_save_admin_port: "ポート設定を保存",
+        title_priority: "デュアルモデル優先順位 (Failover Chain)",
+        btn_swap_priority: "優先順位を交代",
+        help_priority: "翻訳リクエスト時、上記順序で試行します。タイムアウトや障害時には自動的に次の優先モデルへフォールバックします。",
+        title_providers: "プロバイダー詳細とオンライン設定編集",
+        modal_edit_title: "歌詞の確認と編集",
+        modal_source_label: "正規化原文 (Source Text)",
+        modal_trans_label: "訳文 / ローマ字 (手動編集可能)",
+        btn_cancel: "キャンセル",
+        btn_save_lyrics: "変更を保存",
+        toast_meta_saved: "メタプロンプトを保存しました！",
+        toast_user_saved: "ユーザープロンプトを保存しました！",
+        toast_port_saved: "管理ポートを設定ファイルに保存しました！",
+        toast_swap_priority: "優先順位を切り替えました！",
+        toast_lyrics_saved: "歌詞を更新しました！次回の再生で反映されます。",
+        toast_lyrics_deleted: "歌詞キャッシュを削除しました",
+        toast_all_cleared: "全キャッシュを削除しました",
+        confirm_delete_all: "警告：すべての歌詞キャッシュを削除しますか？取り消すことはできません！",
+        confirm_delete_item: "この歌詞キャッシュを削除してもよろしいですか？",
+        key_configured: "● API Key 設定済み",
+        key_missing: "○ Key 未設定",
+        btn_save_provider: "プロバイダー設定を保存",
+        prov_key_label: "API Key (上書き入力)",
+        prov_key_placeholder: "未設定、API Keyを入力してください",
+        toast_provider_saved: "設定が config.yaml に保存されました！",
+        confirm_reset_meta: "デフォルトのメタプロンプトに戻してもよろしいですか？",
+        confirm_reset_user: "デフォルトのチューニングプロンプトに戻してもよろしいですか？"
+      },
+      ko: {
+        status_running: "서비스 실행 중",
+        btn_refresh: "새로고침",
+        stat_cached_count: "캐시된 곡 수",
+        stat_primary_model: "우선 주 모델 (Priority #1)",
+        stat_backup_model: "장애 대비 모델 (Priority #2)",
+        stat_romaji_support: "한일 로마자 변환",
+        stat_romaji_ready: "준비 완료 (?romaji=true)",
+        tab_lyrics: "가사 캐시 관리",
+        tab_prompts: "프롬프트 설정",
+        tab_models: "듀얼 모델 및 설정",
+        search_placeholder: "가사, 번역, 해시 검색...",
+        btn_clear_all: "전체 캐시 삭제",
+        th_cache_key: "Cache Key",
+        th_source_preview: "원문 미리보기",
+        th_trans_preview: "번역 미리보기",
+        th_target_lang: "대상 언어",
+        th_model: "번역 모델",
+        th_updated_at: "수정 일시",
+        th_actions: "작업",
+        loading_lyrics: "가사 캐시 데이터를 불러오는 중...",
+        no_lyrics: "캐시된 가사 기록이 없습니다",
+        btn_edit: "수정",
+        btn_delete: "삭제",
+        title_meta_prompt: "메타 프롬프트 (Meta Prompt)",
+        badge_meta_prompt: "수정 가능한 시스템 프레임워크 · 줄 수 엄수",
+        help_meta_prompt: "엄격한 1:1 줄 수 대응, 순수 텍스트 출력, <b>배경 정보 출력 금지</b> 등의 핵심 규칙을 제어합니다.",
+        btn_reset_meta: "기본값으로 복원",
+        btn_save_meta: "메타 프롬프트 저장",
+        title_user_prompt: "사용자 프롬프트 (User Prompt)",
+        badge_user_prompt: "문학적 번역 튜닝 · 실시간 적용",
+        label_user_prompt: "현재 문학적 번역 가이드 지침:",
+        help_user_prompt: "메타 프롬프트와 사용자 프롬프트를 결합하여 LLM에 전송합니다. 현재 활성화된 내용이 표시되며, 수정 저장 시 config.yaml에 즉시 반영됩니다.",
+        btn_reset_user: "기본 스타일로 복원",
+        btn_save_user: "사용자 프롬프트 저장",
+        title_server_settings: "서비스 및 관리 포트 설정",
+        label_admin_port: "독립 관리 콘솔 포트 (admin_port)",
+        help_admin_port: "독립 포트를 지정하면 관리 페이지가 해당 포트에서 실행됩니다. 비워두면 비즈니스 포트(5000)와 공유합니다. 재시작 후 적용.",
+        btn_save_admin_port: "포트 설정 저장",
+        title_priority: "듀얼 모델 우선순위 (Failover Chain)",
+        btn_swap_priority: "우선순위 전환",
+        help_priority: "설명: 번역 요청 시 위 순서대로 시도하며, 타임아웃이나 오류 발생 시 자동으로 다음 모델로 페일오버합니다.",
+        title_providers: "제공자 상세 상태 및 온라인 구성 수정",
+        modal_edit_title: "가사 확인 및 수정",
+        modal_source_label: "정규화 원문 (Source Text)",
+        modal_trans_label: "번역문 / 로마자 (직접 수정 가능)",
+        btn_cancel: "취소",
+        btn_save_lyrics: "수정사항 저장",
+        toast_meta_saved: "메타 프롬프트가 성공적으로 저장되었습니다!",
+        toast_user_saved: "사용자 프롬프트가 성공적으로 저장되었습니다!",
+        toast_port_saved: "관리 포트가 설정 파일에 저장되었습니다!",
+        toast_swap_priority: "모델 우선순위가 전환되었습니다!",
+        toast_lyrics_saved: "가사가 업데이트되었습니다! 다음 곡 전환 시 바로 적용됩니다.",
+        toast_lyrics_deleted: "가사 캐시가 삭제되었습니다",
+        toast_all_cleared: "모든 가사 캐시가 초기화되었습니다",
+        confirm_delete_all: "경고: 모든 가사 캐시를 삭제하시겠습니까? 되돌릴 수 없습니다!",
+        confirm_delete_item: "이 가사 캐시를 삭제하시겠습니까?",
+        key_configured: "● API Key 설정됨",
+        key_missing: "○ Key 미설정",
+        btn_save_provider: "제공자 설정 저장",
+        prov_key_label: "API Key (덮어쓰기 입력)",
+        prov_key_placeholder: "미설정, API Key를 입력하세요",
+        toast_provider_saved: "설정이 config.yaml에 저장되었습니다!",
+        confirm_reset_meta: "기본 메타 프롬프트로 복원하시겠습니까?",
+        confirm_reset_user: "기본 튜닝 프롬프트로 복원하시겠습니까?"
+      }
+    };
+
+    let currentLang = localStorage.getItem('ai_lyrics_lang') || 'zh';
+    let currentConfig = null;
+    let allLyrics = [];
+    let currentEditingKey = null;
+
+    function t(key) {
+      const dict = I18N[currentLang] || I18N.zh;
+      return dict[key] || I18N.zh[key] || key;
+    }
+
+    function applyI18n() {
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        el.innerHTML = t(key);
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const key = el.getAttribute('data-i18n-placeholder');
+        el.placeholder = t(key);
+      });
+      document.getElementById('i18n-selector').value = currentLang;
+    }
+
+    function changeLanguage(lang) {
+      currentLang = lang;
+      localStorage.setItem('ai_lyrics_lang', lang);
+      applyI18n();
+      renderPriorityUI();
+      renderLyricsTable(allLyrics);
+    }
+
+    function showToast(msg, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = `toast ${type}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => el.remove(), 3500);
+    }
+
+    function switchTab(tabId, btn) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    }
+
+    async function loadAllData() {
+      await Promise.all([loadConfig(), loadLyrics()]);
+    }
+
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) throw new Error('Failed to load configuration');
+        currentConfig = await res.json();
+
+        document.getElementById('version-badge').textContent = 'v' + (currentConfig.version || '1.1.0');
+        
+        // 元提示词回显
+        document.getElementById('meta-prompt-edit').value = currentConfig.meta_prompt || currentConfig.default_meta_prompt || '';
+        
+        // 用户提示词回显：直接写当前的默认提示词
+        document.getElementById('user-prompt-edit').value = currentConfig.user_prompt || currentConfig.default_user_prompt || '';
+
+        // 管理端口回显
+        document.getElementById('admin-port-input').value = currentConfig.admin_port || '';
+
+        renderPriorityUI();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function renderPriorityUI() {
+      if (!currentConfig) return;
+      const pri = currentConfig.priority || ['deepseek', 'gemini'];
+      const provs = currentConfig.providers || {};
+
+      document.getElementById('stat-model').textContent = pri[0] ? `${pri[0]} (${provs[pri[0]]?.model || ''})` : '-';
+      document.getElementById('stat-backup-model').textContent = pri[1] ? `${pri[1]} (${provs[pri[1]]?.model || ''})` : '-';
+
+      const priContainer = document.getElementById('priority-container');
+      priContainer.innerHTML = '';
+      pri.forEach((name, idx) => {
+        const p = provs[name] || {};
+        const div = document.createElement('div');
+        div.className = `priority-item ${idx === 0 ? 'active-first' : ''}`;
+        div.innerHTML = `
+          <div>
+            <span class="badge" style="margin-right: 8px;">#${idx + 1} ${idx === 0 ? (currentLang === 'zh' ? '首选主用' : 'Primary') : (currentLang === 'zh' ? '故障备份' : 'Backup')}</span>
+            <strong>${name}</strong>
+            <span style="color: var(--text-muted); margin-left: 10px; font-size: 0.85rem;">[${p.type || 'openai'}] ${p.model || '-'}</span>
+          </div>
+          <div>
+            <span style="font-size: 0.8rem; color: ${p.has_key ? '#16a34a' : '#dc2626'};">
+              ${p.has_key ? t('key_configured') : t('key_missing')}
+            </span>
+          </div>
+        `;
+        priContainer.appendChild(div);
+      });
+
+      // 渲染提供商在线修改卡片
+      const provContainer = document.getElementById('providers-container');
+      provContainer.innerHTML = '';
+      Object.keys(provs).forEach(name => {
+        const p = provs[name];
+        const card = document.createElement('div');
+        card.style.cssText = 'border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: #fff;';
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <strong>${name.toUpperCase()}</strong>
+            <span class="badge">${p.type || 'openai'}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem;">
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:2px;">Base URL</label>
+              <input type="text" id="prov-base-${name}" value="${p.base_url || ''}">
+            </div>
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:2px;">Model</label>
+              <input type="text" id="prov-model-${name}" value="${p.model || ''}">
+            </div>
+            <div>
+              <label style="display:block; font-weight:600; margin-bottom:2px;">${t('prov_key_label')}</label>
+              <input type="text" id="prov-key-${name}" placeholder="${p.has_key ? p.key_masked : t('prov_key_placeholder')}">
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <div style="flex:1;">
+                <label style="display:block; font-weight:600; margin-bottom:2px;">Timeout (s)</label>
+                <input type="text" id="prov-timeout-${name}" value="${p.timeout_seconds || 60}">
+              </div>
+              <div style="flex:1;">
+                <label style="display:block; font-weight:600; margin-bottom:2px;">Max Retries</label>
+                <input type="text" id="prov-retries-${name}" value="${p.max_retries || 2}">
+              </div>
+            </div>
+            <div style="margin-top: 6px; text-align: right;">
+              <button class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;" onclick="saveProviderConfig('${name}')">
+                ${t('btn_save_provider')}
+              </button>
+            </div>
+          </div>
+        `;
+        provContainer.appendChild(card);
+      });
+    }
+
+    async function saveProviderConfig(name) {
+      const baseURL = document.getElementById(`prov-base-${name}`).value.trim();
+      const model = document.getElementById(`prov-model-${name}`).value.trim();
+      const key = document.getElementById(`prov-key-${name}`).value.trim();
+      const timeout = parseInt(document.getElementById(`prov-timeout-${name}`).value.trim()) || 60;
+      const retries = parseInt(document.getElementById(`prov-retries-${name}`).value.trim()) || 2;
+
+      const pObj = {
+        type: (name === 'gemini') ? 'gemini' : 'openai',
+        base_url: baseURL,
+        model: model,
+        timeout_seconds: timeout,
+        max_retries: retries
+      };
+      if (key !== '') {
+        pObj.api_key = key;
+      }
+
+      try {
+        const payload = {
+          providers: {
+            [name]: pObj
+          }
+        };
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error('Failed to update provider');
+        showToast(`${name.toUpperCase()} ${t('toast_provider_saved')}`, 'success');
+        await loadConfig();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function swapPriority() {
+      if (!currentConfig || !currentConfig.priority) return;
+      const reversed = [...currentConfig.priority].reverse();
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ priority: reversed })
+        });
+        if (!res.ok) throw new Error('Failed to update priority');
+        showToast(t('toast_swap_priority'), 'success');
+        await loadConfig();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function saveMetaPrompt() {
+      const meta = document.getElementById('meta-prompt-edit').value;
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ meta_prompt: meta })
+        });
+        if (!res.ok) throw new Error('Failed to save meta prompt');
+        showToast(t('toast_meta_saved'), 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function resetMetaPrompt() {
+      if (confirm(t('confirm_reset_meta'))) {
+        document.getElementById('meta-prompt-edit').value = currentConfig?.default_meta_prompt || '';
+        saveMetaPrompt();
+      }
+    }
+
+    async function saveUserPrompt() {
+      const prompt = document.getElementById('user-prompt-edit').value;
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_prompt: prompt })
+        });
+        if (!res.ok) throw new Error('Failed to save user prompt');
+        showToast(t('toast_user_saved'), 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function resetUserPrompt() {
+      if (confirm(t('confirm_reset_user'))) {
+        document.getElementById('user-prompt-edit').value = currentConfig?.default_user_prompt || '';
+        saveUserPrompt();
+      }
+    }
+
+    async function saveAdminPort() {
+      const port = document.getElementById('admin-port-input').value.trim();
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_port: port })
+        });
+        if (!res.ok) throw new Error('Failed to save admin port');
+        showToast(t('toast_port_saved'), 'success');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function loadLyrics() {
+      try {
+        const res = await fetch('/api/lyrics?limit=100');
+        if (!res.ok) throw new Error('Failed to load lyrics');
+        const data = await res.json();
+        allLyrics = data.items || [];
+        document.getElementById('stat-count').textContent = data.total || allLyrics.length;
+        renderLyricsTable(allLyrics);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function renderLyricsTable(items) {
+      const tbody = document.getElementById('lyrics-tbody');
+      tbody.innerHTML = '';
+      if (!items || items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 20px;">${t('no_lyrics')}</td></tr>`;
+        return;
+      }
+
+      items.forEach(item => {
+        const tr = document.createElement('tr');
+        const srcLines = (item.source_text || '').split('\n').filter(Boolean);
+        const transLines = (item.translated_text || '').split('\n').filter(Boolean);
+        const srcPreview = srcLines.slice(0, 3).join(' / ') || '-';
+        const transPreview = transLines.slice(0, 3).join(' / ') || '-';
+
+        tr.innerHTML = `
+          <td><span class="key-tag" title="${item.cache_key}">${item.cache_key.substring(0, 10)}...</span></td>
+          <td><div class="lyrics-preview" title="${escapeHtml(item.source_text)}">${escapeHtml(srcPreview)}</div></td>
+          <td><div class="lyrics-preview" title="${escapeHtml(item.translated_text)}">${escapeHtml(transPreview)}</div></td>
+          <td><span class="badge" style="background: #e2e8f0; color: #334155;">${item.target_lang}</span></td>
+          <td><span style="font-size: 0.8rem; color: var(--text-muted);">${item.model_name || '-'}</span></td>
+          <td style="font-size: 0.8rem; color: var(--text-muted);">${formatDate(item.updated_at)}</td>
+          <td style="text-align: right;">
+            <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="openEditModal('${item.cache_key}')">${t('btn_edit')}</button>
+            <button class="btn btn-danger" style="padding: 4px 8px; font-size: 0.75rem; margin-left: 4px;" onclick="deleteLyrics('${item.cache_key}')">${t('btn_delete')}</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function handleSearch() {
+      const q = document.getElementById('lyrics-search').value.toLowerCase().trim();
+      if (!q) {
+        renderLyricsTable(allLyrics);
+        return;
+      }
+      const filtered = allLyrics.filter(item => 
+        (item.source_text && item.source_text.toLowerCase().includes(q)) ||
+        (item.translated_text && item.translated_text.toLowerCase().includes(q)) ||
+        (item.cache_key && item.cache_key.toLowerCase().includes(q))
+      );
+      renderLyricsTable(filtered);
+    }
+
+    async function openEditModal(key) {
+      currentEditingKey = key;
+      const item = allLyrics.find(i => i.cache_key === key);
+      if (!item) return;
+
+      document.getElementById('modal-title').textContent = `${t('modal_edit_title')} [${key.substring(0, 8)}...]`;
+      document.getElementById('modal-source').value = item.source_text || '';
+      document.getElementById('modal-translated').value = item.translated_text || '';
+      document.getElementById('edit-modal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('edit-modal').classList.remove('active');
+      currentEditingKey = null;
+    }
+
+    async function saveEditedLyrics() {
+      if (!currentEditingKey) return;
+      const newText = document.getElementById('modal-translated').value;
+      try {
+        const res = await fetch('/api/lyrics', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            key: currentEditingKey,
+            translated_text: newText
+          })
+        });
+        if (!res.ok) throw new Error('Save failed');
+        showToast(t('toast_lyrics_saved'), 'success');
+        closeModal();
+        await loadLyrics();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function deleteLyrics(key) {
+      if (!confirm(`${t('confirm_delete_item')} (${key.substring(0, 8)}...)`)) return;
+      try {
+        const res = await fetch(`/api/lyrics?key=${encodeURIComponent(key)}`, {
+          method: 'DELETE'
+        });
+        if (!res.ok) throw new Error('Delete failed');
+        showToast(t('toast_lyrics_deleted'), 'success');
+        await loadLyrics();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function confirmDeleteAll() {
+      if (!confirm(t('confirm_delete_all'))) return;
+      try {
+        const res = await fetch('/api/lyrics?key=all', {
+          method: 'DELETE'
+        });
+        if (!res.ok) throw new Error('Clear all failed');
+        showToast(t('toast_all_cleared'), 'success');
+        await loadLyrics();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function formatDate(isoStr) {
+      if (!isoStr) return '-';
+      try {
+        const d = new Date(isoStr);
+        const localeMap = {
+          'zh': 'zh-CN',
+          'zh-TW': 'zh-TW',
+          'ja': 'ja-JP',
+          'ko': 'ko-KR',
+          'en': 'en-US'
+        };
+        return d.toLocaleString(localeMap[currentLang] || 'zh-CN', { hour12: false });
+      } catch {
+        return isoStr;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      applyI18n();
+      loadAllData();
+    });
+  </script>
+</body>
+</html>
