@@ -36,3 +36,7 @@ data/
 *.py
 *.pyc
 __pycache__/
+
+# 多 Agent 协同专供深度说明文档 (本地保留，不推送到公开远端)
+AGENT_COLLABORATION.md
+AGENT_SPEC.md
