@@ -127,3 +127,41 @@ llm:
 		t.Fatalf("active model mismatch: %s", cfg.LLMModel)
 	}
 }
+
+func TestConfigForceRomaji(t *testing.T) {
+	tempDir := t.TempDir()
+	configFile := filepath.Join(tempDir, "romaji_config.yaml")
+
+	yamlContent := `
+translation:
+  force_romaji: true
+`
+	if err := os.WriteFile(configFile, []byte(yamlContent), 0644); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	cfg := LoadConfig(configFile)
+	if !cfg.IsForceRomaji() {
+		t.Errorf("expected IsForceRomaji to be true")
+	}
+
+	// 测试修改并保存
+	if err := cfg.UpdateForceRomajiAndSave(false); err != nil {
+		t.Fatalf("UpdateForceRomajiAndSave failed: %v", err)
+	}
+	if cfg.IsForceRomaji() {
+		t.Errorf("expected IsForceRomaji to be false after update")
+	}
+
+	reloaded := LoadConfig(configFile)
+	if reloaded.IsForceRomaji() {
+		t.Errorf("expected reloaded config IsForceRomaji to be false")
+	}
+
+	// 测试环境变量覆盖
+	t.Setenv("FORCE_ROMAJI", "true")
+	cfgEnv := LoadConfig(configFile)
+	if !cfgEnv.IsForceRomaji() {
+		t.Errorf("expected IsForceRomaji to be true with FORCE_ROMAJI=true env")
+	}
+}

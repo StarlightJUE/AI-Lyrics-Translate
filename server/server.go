@@ -157,15 +157,16 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":     "AI-Lyrics-Translate",
-		"version":     Version,
-		"protocol":    "LibreTranslate Standard",
-		"status":      "running",
-		"model":       activeModel,
-		"priority":    pri,
-		"prompt_ver":  s.cfg.PromptVersion,
-		"caching":     "SQLite WAL (SHA-256 Content-Aware)",
-		"currentTime": time.Now().Format(time.RFC3339),
+		"service":      "AI-Lyrics-Translate",
+		"version":      Version,
+		"protocol":     "LibreTranslate Standard",
+		"status":       "running",
+		"model":        activeModel,
+		"priority":     pri,
+		"force_romaji": s.cfg.IsForceRomaji(),
+		"prompt_ver":   s.cfg.PromptVersion,
+		"caching":      "SQLite WAL (SHA-256 Content-Aware)",
+		"currentTime":  time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -354,6 +355,7 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 			"version":             Version,
 			"priority":            pri,
 			"admin_port":          s.cfg.GetAdminPort(),
+			"force_romaji":        s.cfg.IsForceRomaji(),
 			"providers":           provDTOs,
 			"meta_prompt":         metaPrompt,
 			"user_prompt":         userPrompt,
@@ -365,15 +367,24 @@ func (s *Server) handleAPIConfig(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var req struct {
-			UserPrompt *string                          `json:"user_prompt,omitempty"`
-			MetaPrompt *string                          `json:"meta_prompt,omitempty"`
-			AdminPort  *string                          `json:"admin_port,omitempty"`
-			Priority   []string                         `json:"priority,omitempty"`
-			Providers  map[string]config.ProviderConfig `json:"providers,omitempty"`
+			UserPrompt  *string                          `json:"user_prompt,omitempty"`
+			MetaPrompt  *string                          `json:"meta_prompt,omitempty"`
+			AdminPort   *string                          `json:"admin_port,omitempty"`
+			ForceRomaji *bool                            `json:"force_romaji,omitempty"`
+			Priority    []string                         `json:"priority,omitempty"`
+			Providers   map[string]config.ProviderConfig `json:"providers,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
+		}
+
+		if req.ForceRomaji != nil {
+			if err := s.cfg.UpdateForceRomajiAndSave(*req.ForceRomaji); err != nil {
+				http.Error(w, fmt.Sprintf("Save force_romaji error: %v", err), http.StatusInternalServerError)
+				return
+			}
+			log.Printf("[WEB UI] 强制罗马音配置更新成功并已保存至配置文件: %v", *req.ForceRomaji)
 		}
 
 		if req.UserPrompt != nil {
@@ -462,8 +473,8 @@ func (s *Server) handleTranslate(w http.ResponseWriter, r *http.Request) {
 		req.Format = r.FormValue("format")
 	}
 
-	// 判断客户端是否要求转罗马音
-	isRomanize := s.checkRomanizeRequest(r, &req)
+	// 判断客户端是否要求转罗马音，或者全局配置启用了强制罗马音
+	isRomanize := s.cfg.IsForceRomaji() || s.checkRomanizeRequest(r, &req)
 
 	// 目标语言解析：根据客户端 target 与配置做精准映射
 	resolvedTarget := s.cfg.ResolveTargetLanguage(req.Target)

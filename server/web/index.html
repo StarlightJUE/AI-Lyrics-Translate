@@ -351,7 +351,7 @@
       </div>
       <div class="stat-box">
         <div class="stat-label" data-i18n="stat_romaji_support">日韩罗马音支持</div>
-        <div class="stat-value" style="font-size: 1.15rem; color: #16a34a;" data-i18n="stat_romaji_ready">就绪 (?romaji=true)</div>
+        <div class="stat-value" id="stat-romaji-status" style="font-size: 1.15rem; color: #16a34a;" data-i18n="stat_romaji_ready">就绪 (?romaji=true)</div>
       </div>
     </div>
 
@@ -441,6 +441,26 @@
           </div>
           <div style="display: flex; align-items: flex-end; margin-bottom: 16px;">
             <button class="btn btn-primary" onclick="saveAdminPort()" data-i18n="btn_save_admin_port">保存端口配置</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 翻译与罗马音模式设置 -->
+      <div class="card">
+        <div class="card-title">
+          <span data-i18n="title_romaji_settings">歌词注音与罗马音模式设置 (Romanization)</span>
+          <span class="badge" id="romaji-mode-badge" style="background:#e0e7ff; color:var(--primary);" data-i18n="badge_romaji_normal">标准翻译模式</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: flex-start; gap: 12px; padding: 14px; background: #f8fafc; border-radius: 8px; border: 1px solid var(--border);">
+            <input type="checkbox" id="force-romaji-checkbox" style="margin-top: 4px; width: 18px; height: 18px; cursor: pointer;" onchange="toggleForceRomajiUI()">
+            <div style="flex: 1;">
+              <label for="force-romaji-checkbox" style="font-weight: 600; cursor: pointer; color: #0f172a;" data-i18n="label_force_romaji">强制罗马音/拼音模式 (force_romaji)</label>
+              <div class="form-help" style="margin-top: 4px;" data-i18n="help_force_romaji">启用后，服务端将忽略客户端传入的目标语言（如 zh/en 等），直接将日文、韩文歌词转写为规范罗马音（中文字词转拼音，英文原样保留）。专为仅支持标准 LibreTranslate 翻译接口但无法传参自定义罗马音的音乐播放器量身定制。修改后即刻生效并持久化写入 config.yaml。</div>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end;">
+            <button class="btn btn-primary" onclick="saveForceRomaji()" data-i18n="btn_save_romaji_setting">保存罗马音设置</button>
           </div>
         </div>
       </div>
@@ -556,7 +576,15 @@
         prov_key_placeholder: "未配置，请输入 API Key",
         toast_provider_saved: "配置已成功保存至 config.yaml！",
         confirm_reset_meta: "确定要恢复为内置默认元提示词吗？",
-        confirm_reset_user: "确定要恢复为内置默认调优提示词吗？"
+        confirm_reset_user: "确定要恢复为内置默认调优提示词吗？",
+        stat_romaji_forced: "全局已启用 (强制罗马音)",
+        title_romaji_settings: "歌词注音与罗马音模式设置 (Romanization)",
+        badge_romaji_forced: "强制罗马音模式生效中",
+        badge_romaji_normal: "标准翻译模式",
+        label_force_romaji: "强制罗马音/拼音模式 (force_romaji)",
+        help_force_romaji: "启用后，服务端将忽略客户端传入的目标语言（如 zh/en 等），直接将日文、韩文歌词转写为规范罗马音（中文字词转拼音，英文原样保留）。专为仅支持标准 LibreTranslate 翻译接口但无法传参自定义罗马音的音乐播放器量身定制。修改后即刻生效并持久化写入 config.yaml。",
+        btn_save_romaji_setting: "保存罗马音设置",
+        toast_romaji_saved: "罗马音模式设置已更新并保存至配置文件！"
       },
       "zh-TW": {
         status_running: "服務運行中",
@@ -622,7 +650,15 @@
         prov_key_placeholder: "未設定，請輸入 API Key",
         toast_provider_saved: "設定已成功儲存至 config.yaml！",
         confirm_reset_meta: "確定要恢復為內建預設元提示詞嗎？",
-        confirm_reset_user: "確定要恢復為內建預設調優提示詞嗎？"
+        confirm_reset_user: "確定要恢復為內建預設調優提示詞嗎？",
+        stat_romaji_forced: "全域已啟用 (強制羅馬音)",
+        title_romaji_settings: "歌詞注音與羅馬音模式設定 (Romanization)",
+        badge_romaji_forced: "強制羅馬音模式生效中",
+        badge_romaji_normal: "標準翻譯模式",
+        label_force_romaji: "強制羅馬音/拼音模式 (force_romaji)",
+        help_force_romaji: "啟用後，服務端將忽略客戶端傳入的目標語言（如 zh/en 等），直接將日文、韓文歌詞轉寫為規範羅馬音（中文字詞轉拼音，英文原樣保留）。專為僅支援標準 LibreTranslate 翻譯介面但無法傳參自訂羅馬音的音樂播放器量身打造。修改後即刻生效並儲存至設定檔。",
+        btn_save_romaji_setting: "儲存羅馬音模式設定",
+        toast_romaji_saved: "羅馬音模式設定已更新並儲存至設定檔！"
       },
       en: {
         status_running: "Service Running",
@@ -688,7 +724,15 @@
         prov_key_placeholder: "Not set, please enter API Key",
         toast_provider_saved: "configuration saved to config.yaml!",
         confirm_reset_meta: "Are you sure you want to restore the default meta prompt?",
-        confirm_reset_user: "Are you sure you want to restore the default tuning prompt?"
+        confirm_reset_user: "Are you sure you want to restore the default tuning prompt?",
+        stat_romaji_forced: "Enabled (Force Romaji)",
+        title_romaji_settings: "Romanization & Transliteration Settings",
+        badge_romaji_forced: "Force Romaji Active",
+        badge_romaji_normal: "Standard Translation Mode",
+        label_force_romaji: "Force Romaji / Transliteration Mode (force_romaji)",
+        help_force_romaji: "When enabled, the server ignores the target language sent by clients (e.g. zh/en) and directly converts Japanese/Korean lyrics into standard Romaji (and Chinese into Pinyin, preserving English). Designed for music players that only support standard LibreTranslate API without custom romaji query parameters. Takes effect immediately and saves to config.yaml.",
+        btn_save_romaji_setting: "Save Romanization Settings",
+        toast_romaji_saved: "Romanization settings updated and saved to config!"
       },
       ja: {
         status_running: "サービス稼働中",
@@ -754,7 +798,15 @@
         prov_key_placeholder: "未設定、API Keyを入力してください",
         toast_provider_saved: "設定が config.yaml に保存されました！",
         confirm_reset_meta: "デフォルトのメタプロンプトに戻してもよろしいですか？",
-        confirm_reset_user: "デフォルトのチューニングプロンプトに戻してもよろしいですか？"
+        confirm_reset_user: "デフォルトのチューニングプロンプトに戻してもよろしいですか？",
+        stat_romaji_forced: "有効 (常時ローマ字変換)",
+        title_romaji_settings: "ローマ字・注音モード設定 (Romanization)",
+        badge_romaji_forced: "常時ローマ字モード適用中",
+        badge_romaji_normal: "標準翻訳モード",
+        label_force_romaji: "強制ローマ字/ピンインモード (force_romaji)",
+        help_force_romaji: "有効にすると、クライアントから送信されたターゲット言語（zh/en等）を無視し、日本語・韓国語の歌詞を標準ローマ字（中国語はピンイン、英語はそのまま維持）に直接変換します。独自のローマ字パラメータを送信できない標準LibreTranslate対応音楽プレーヤー向け機能です。保存すると即時反映されます。",
+        btn_save_romaji_setting: "ローマ字設定を保存",
+        toast_romaji_saved: "ローマ字モード設定が更新され、設定ファイルに保存されました！"
       },
       ko: {
         status_running: "서비스 실행 중",
@@ -820,7 +872,15 @@
         prov_key_placeholder: "미설정, API Key를 입력하세요",
         toast_provider_saved: "설정이 config.yaml에 저장되었습니다!",
         confirm_reset_meta: "기본 메타 프롬프트로 복원하시겠습니까?",
-        confirm_reset_user: "기본 튜닝 프롬프트로 복원하시겠습니까?"
+        confirm_reset_user: "기본 튜닝 프롬프트로 복원하시겠습니까?",
+        stat_romaji_forced: "활성화 (항상 로마자 변환)",
+        title_romaji_settings: "로마자·발음 표기 모드 설정 (Romanization)",
+        badge_romaji_forced: "항상 로마자 모드 적용 중",
+        badge_romaji_normal: "표준 번역 모드",
+        label_force_romaji: "강제 로마자/병음 모드 (force_romaji)",
+        help_force_romaji: "활성화하면 클라이언트의 대상 언어(zh/en 등)를 무시하고 일본어/한국어 가사를 표준 로마자로 직접 변환합니다(중국어는 병음, 영어는 원문 유지). 커스텀 romaji 파라미터를 보낼 수 없는 표준 LibreTranslate 지원 음악 플레이어를 위해 설계되었습니다. 저장 시 즉시 적용됩니다.",
+        btn_save_romaji_setting: "로마자 설정 저장",
+        toast_romaji_saved: "로마자 모드 설정이 저장되었습니다!"
       }
     };
 
@@ -844,6 +904,9 @@
         el.placeholder = t(key);
       });
       document.getElementById('i18n-selector').value = currentLang;
+      if (currentConfig) {
+        updateRomajiStatusUI(currentConfig.force_romaji);
+      }
     }
 
     function changeLanguage(lang) {
@@ -891,7 +954,65 @@
         // 管理端口回显
         document.getElementById('admin-port-input').value = currentConfig.admin_port || '';
 
+        // 强制罗马音模式回显
+        const isForceRomaji = !!currentConfig.force_romaji;
+        const romajiCheckbox = document.getElementById('force-romaji-checkbox');
+        if (romajiCheckbox) {
+          romajiCheckbox.checked = isForceRomaji;
+        }
+        updateRomajiStatusUI(isForceRomaji);
+
         renderPriorityUI();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function updateRomajiStatusUI(isForced) {
+      const statVal = document.getElementById('stat-romaji-status');
+      const badge = document.getElementById('romaji-mode-badge');
+      if (isForced) {
+        if (statVal) {
+          statVal.textContent = t('stat_romaji_forced');
+          statVal.style.color = '#7c3aed';
+        }
+        if (badge) {
+          badge.textContent = t('badge_romaji_forced');
+          badge.style.background = '#ede9fe';
+          badge.style.color = '#7c3aed';
+        }
+      } else {
+        if (statVal) {
+          statVal.textContent = t('stat_romaji_ready');
+          statVal.style.color = '#16a34a';
+        }
+        if (badge) {
+          badge.textContent = t('badge_romaji_normal');
+          badge.style.background = '#e0e7ff';
+          badge.style.color = 'var(--primary)';
+        }
+      }
+    }
+
+    function toggleForceRomajiUI() {
+      const checkbox = document.getElementById('force-romaji-checkbox');
+      if (checkbox) {
+        updateRomajiStatusUI(checkbox.checked);
+      }
+    }
+
+    async function saveForceRomaji() {
+      const checkbox = document.getElementById('force-romaji-checkbox');
+      const enabled = checkbox ? checkbox.checked : false;
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ force_romaji: enabled })
+        });
+        if (!res.ok) throw new Error('Failed to update romaji settings');
+        showToast(t('toast_romaji_saved'), 'success');
+        await loadConfig();
       } catch (err) {
         showToast(err.message, 'error');
       }

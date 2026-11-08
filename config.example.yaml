@@ -45,6 +45,10 @@ translation:
   # 可选值: simplified (简体中文) / traditional (繁体中文)
   chinese_target_default: "simplified"
   
+  # 强制罗马音模式（忽略客户端传入的目标语言，所有歌词全部转写为规范罗马音/拼音）
+  # 适用场景：播放器客户端仅支持标准翻译API且无法传参时，一键全局输出罗马音
+  force_romaji: false
+
   # 提示词版本标识（当提示词重大更新时，修改此项可区分缓存）
   prompt_version: "v1.0"
   

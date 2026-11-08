@@ -61,6 +61,10 @@ translation:
   # 可选值: simplified (简体中文) / traditional (繁体中文)
   chinese_target_default: "simplified"
   
+  # 强制罗马音/拼音模式（开启后忽略客户端传入的目标语言，所有歌词全部转写为罗马音/拼音）
+  # 适用场景：播放器客户端仅支持标准翻译API且无法传参时，一键全局输出罗马音
+  force_romaji: false
+
   # 提示词版本标识（当提示词重大更新时，修改此项可区分缓存）
   prompt_version: "v1.0"
   
@@ -109,12 +113,14 @@ type FileConfig struct {
 	} `yaml:"llm" json:"llm"`
 	Translation struct {
 		ChineseTargetDefault string `yaml:"chinese_target_default" json:"chinese_target_default"`
+		ForceRomaji          bool   `yaml:"force_romaji" json:"force_romaji"`
 		PromptVersion        string `yaml:"prompt_version" json:"prompt_version"`
 		CustomPrompt         string `yaml:"custom_prompt" json:"custom_prompt"`
 		CustomMetaPrompt     string `yaml:"custom_meta_prompt" json:"custom_meta_prompt"`
 	} `yaml:"translation" json:"translation"`
 	Lyrics struct {
 		ChineseTargetDefault string `yaml:"chinese_target_default" json:"chinese_target_default"`
+		ForceRomaji          bool   `yaml:"force_romaji" json:"force_romaji"`
 		PromptVersion        string `yaml:"prompt_version" json:"prompt_version"`
 		CustomPrompt         string `yaml:"custom_prompt" json:"custom_prompt"`
 		CustomMetaPrompt     string `yaml:"custom_meta_prompt" json:"custom_meta_prompt"`
@@ -145,6 +151,7 @@ type Config struct {
 	LLMTimeoutSeconds    int
 	LLMMaxRetries        int
 
+	ForceRomaji          bool   // 是否强制罗马音模式（忽略客户端目标语言，所有歌词全部转罗马音）
 	PromptVersion        string
 	CustomPrompt         string // 用户提示词 (User Prompt)
 	CustomMetaPrompt     string // 自定义元提示词 (Meta Prompt)
@@ -405,6 +412,8 @@ func loadFromFile(filePath string, cfg *Config) error {
 		cfg.CustomMetaPrompt = cMeta
 	}
 
+	cfg.ForceRomaji = f.Translation.ForceRomaji || f.Lyrics.ForceRomaji
+
 	if f.Storage.DBPath != "" {
 		cfg.DBPath = f.Storage.DBPath
 	}
@@ -503,6 +512,15 @@ func overrideWithEnv(cfg *Config) {
 	if val := os.Getenv("CHINESE_TARGET_DEFAULT"); val != "" {
 		cfg.ChineseTargetDefault = val
 	}
+	if val := os.Getenv("FORCE_ROMAJI"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			cfg.ForceRomaji = b
+		}
+	} else if val := os.Getenv("TRANSLATION_FORCE_ROMAJI"); val != "" {
+		if b, err := strconv.ParseBool(val); err == nil {
+			cfg.ForceRomaji = b
+		}
+	}
 	if val := os.Getenv("DB_PATH"); val != "" {
 		cfg.DBPath = val
 	}
@@ -597,6 +615,22 @@ func (c *Config) UpdateAdminPortAndSave(newPort string) error {
 	return c.SaveToFile()
 }
 
+// IsForceRomaji 线程安全获取是否强制罗马音模式
+func (c *Config) IsForceRomaji() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ForceRomaji
+}
+
+// UpdateForceRomajiAndSave 更新强制罗马音模式并持久化保存至配置文件
+func (c *Config) UpdateForceRomajiAndSave(enabled bool) error {
+	c.mu.Lock()
+	c.ForceRomaji = enabled
+	c.mu.Unlock()
+
+	return c.SaveToFile()
+}
+
 // UpdatePriorityAndSave 更新优先级并写回配置文件
 func (c *Config) UpdatePriorityAndSave(priority []string) error {
 	c.mu.Lock()
@@ -637,6 +671,7 @@ func (c *Config) SaveToFile(customPath ...string) error {
 	f.LLM.Priority = c.LLMPriority
 	f.LLM.Providers = c.LLMProviders
 	f.Translation.ChineseTargetDefault = c.ChineseTargetDefault
+	f.Translation.ForceRomaji = c.ForceRomaji
 	f.Translation.PromptVersion = c.PromptVersion
 	f.Translation.CustomPrompt = c.CustomPrompt
 	f.Translation.CustomMetaPrompt = c.CustomMetaPrompt

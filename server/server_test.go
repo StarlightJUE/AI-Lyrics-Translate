@@ -573,3 +573,115 @@ func TestRomanizeDetection(t *testing.T) {
 	}
 }
 
+// TestForceRomajiMode 验证当服务端配置启用 force_romaji 时，忽略客户端 target 并直接转为罗马音模式
+func TestForceRomajiMode(t *testing.T) {
+	srv, store, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	rawLrc := "[00:01.00]君の名は"
+
+	// 1. 分别准备罗马音缓存与中文翻译缓存
+	zhKey, _ := normalizer.GenerateCacheKey(rawLrc, "zh-Hans")
+	romajiKey, _ := normalizer.GenerateCacheKey(rawLrc, "romaji")
+
+	_ = store.Set(&storage.CachedTranslation{
+		CacheKey:       zhKey,
+		SourceText:     "君の名は",
+		TranslatedText: "你的名字",
+		TargetLang:     "zh-Hans",
+		ModelName:      "test-model",
+	})
+	_ = store.Set(&storage.CachedTranslation{
+		CacheKey:       romajiKey,
+		SourceText:     "君の名は",
+		TranslatedText: "kimi no na wa",
+		TargetLang:     "romaji",
+		ModelName:      "romaji-engine",
+	})
+
+	// 2. 默认模式 (ForceRomaji = false)：客户端传 target: "zh" 返回中文
+	reqBodyZh, _ := json.Marshal(map[string]any{
+		"q":      rawLrc,
+		"source": "ja",
+		"target": "zh",
+	})
+	rNormal := httptest.NewRequest("POST", "/translate", bytes.NewBuffer(reqBodyZh))
+	rNormal.Header.Set("Content-Type", "application/json")
+	wNormal := httptest.NewRecorder()
+	mux.ServeHTTP(wNormal, rNormal)
+
+	if wNormal.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", wNormal.Code)
+	}
+	var resNormal TranslateResponseSingle
+	_ = json.Unmarshal(wNormal.Body.Bytes(), &resNormal)
+	if !strings.Contains(resNormal.TranslatedText, "你的名字") {
+		t.Errorf("expected normal translate result '你的名字', got: %s", resNormal.TranslatedText)
+	}
+
+	// 3. 启用强制罗马音模式 (ForceRomaji = true)：客户端传 target: "zh" 且无任何romaji参数，强制返回罗马音
+	srv.cfg.ForceRomaji = true
+
+	rForced := httptest.NewRequest("POST", "/translate", bytes.NewBuffer(reqBodyZh))
+	rForced.Header.Set("Content-Type", "application/json")
+	wForced := httptest.NewRecorder()
+	mux.ServeHTTP(wForced, rForced)
+
+	if wForced.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", wForced.Code)
+	}
+	var resForced TranslateResponseSingle
+	_ = json.Unmarshal(wForced.Body.Bytes(), &resForced)
+	if !strings.Contains(resForced.TranslatedText, "kimi no na wa") {
+		t.Errorf("expected force romaji result 'kimi no na wa', got: %s", resForced.TranslatedText)
+	}
+}
+
+// TestAPIConfigForceRomaji 验证管理端 API 读取和修改 force_romaji
+func TestAPIConfigForceRomaji(t *testing.T) {
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// 1. GET 验证当前 force_romaji 为 false
+	reqGet := httptest.NewRequest("GET", "/api/config", nil)
+	wGet := httptest.NewRecorder()
+	mux.ServeHTTP(wGet, reqGet)
+	var cfgMap map[string]any
+	_ = json.Unmarshal(wGet.Body.Bytes(), &cfgMap)
+	if cfgMap["force_romaji"] != false {
+		t.Errorf("expected force_romaji to be false initially, got %v", cfgMap["force_romaji"])
+	}
+
+	// 2. POST 修改 force_romaji 为 true
+	trueVal := true
+	postBody, _ := json.Marshal(map[string]any{
+		"force_romaji": trueVal,
+	})
+	reqPost := httptest.NewRequest("POST", "/api/config", bytes.NewBuffer(postBody))
+	reqPost.Header.Set("Content-Type", "application/json")
+	wPost := httptest.NewRecorder()
+	mux.ServeHTTP(wPost, reqPost)
+	if wPost.Code != http.StatusOK {
+		t.Fatalf("POST /api/config failed: %d", wPost.Code)
+	}
+
+	if !srv.cfg.IsForceRomaji() {
+		t.Errorf("expected srv.cfg.IsForceRomaji to be true after POST")
+	}
+
+	// 3. 再次 GET 验证已是 true
+	wGet2 := httptest.NewRecorder()
+	mux.ServeHTTP(wGet2, httptest.NewRequest("GET", "/api/config", nil))
+	var cfgMap2 map[string]any
+	_ = json.Unmarshal(wGet2.Body.Bytes(), &cfgMap2)
+	if cfgMap2["force_romaji"] != true {
+		t.Errorf("expected force_romaji to be true, got %v", cfgMap2["force_romaji"])
+	}
+}
+

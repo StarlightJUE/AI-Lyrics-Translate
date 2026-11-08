@@ -37,8 +37,9 @@
    - **Anti-Leakage Meta Constraint**: Hardcoded meta prompt strictly forbids the model from outputting background info, ensuring a pure 1:1 line mapping.
 
 5. **Japanese & Korean Romaji Transliteration**:
-   - Transliterates Japanese to Hepburn Romaji and Korean to Revised Romanization.
-   - Triggered on-demand via URL query (`?romaji=true`), request body (`target: "romaji"`), or header (`X-Lyrics-Romanize: true`).
+   - Transliterates Japanese to Hepburn Romaji, Korean to Revised Romanization, and Chinese to Pinyin (preserving English lines).
+   - **Global Server Toggle (Recommended)**: Enable `translation.force_romaji: true` in `config.yaml`, Web UI, or via environment variable `FORCE_ROMAJI=true` to automatically output Romaji for all requests, regardless of the client's requested target language.
+   - **Client-Side Trigger**: Or trigger on-demand via URL query (`?romaji=true`), request body (`target: "romaji"`), or header (`X-Lyrics-Romanize: true`).
 
 6. **Multi-Format Support & Timeline Stripping**:
    - Supports Standard LRC, Enhanced LRC, ESLRC, ASS/SSA, WebVTT, and SRT.
@@ -139,6 +140,8 @@ log_level: "info"
 | **Server Address** | `http://127.0.0.1:5000` | Local relay listening address |
 | **API Key** | *(Leave empty)* | Handled internally by local service |
 | **Target Language** | `zh` | Or `romaji` for transliteration |
+
+> **Tip**: If your music player does not support custom parameters for Romaji, simply turn on **Force Romaji Mode** (`force_romaji: true`) in the Web Console or in `config.yaml`. The server will automatically return Romaji for all lyrics requests!
 
 ---
 

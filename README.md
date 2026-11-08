@@ -37,8 +37,10 @@
    - **元提示词硬编码约束**：系统元提示词严格限制大模型“严禁在输出中包含背景信息”，确保返回的歌词行数与格式 1:1 纯净如初。
 
 5. **日韩语转罗马音 (Romaji / Romanization) 支持**：
-   - 全面支持日语歌词转赫本式罗马字（Hepburn Romaji）以及韩语歌词转文观部罗马音（Revised Romanization of Korean）。
-   - **按需触发**：具体转不转完全听从客户端请求，客户端在请求中带上 `?romaji=true`、`?romanize=1`、`target: "romaji"` 或 HTTP Header `X-Lyrics-Romanize: true` 即可无缝切换为罗马音注音模式，且独立缓存互不干扰。
+   - 全面支持日语歌词转赫本式罗马字（Hepburn Romaji）、韩语歌词转文观部罗马音（Revised Romanization of Korean）以及中文转拼音（英文伴唱完整保留）。
+   - **双模触发（客户端传参 + 服务端全局强制开关）**：
+     - **服务端全局开关（推荐）**：由于绝大多数音乐播放器仅支持标准翻译 API 无法传参，可直接在 Web 控制台勾选开启或在 `config.yaml` 设置 `translation.force_romaji: true`（或环境变量 `FORCE_ROMAJI=true`），服务端将直接把所有请求转为罗马音输出，忽略客户端目标语言！
+     - **客户端按需传参**：客户端在请求中带上 `?romaji=true`、`?romanize=1`、`target: "romaji"` 或 HTTP Header `X-Lyrics-Romanize: true` 亦可无缝切换为罗马音注音模式，且独立缓存互不干扰。
 
 6. **全格式适配与智能时间轴剥离（独创降本优化）**：
    - **全格式支持**：全面支持标准 LRC、Enhanced LRC、ESLRC、ASS/SSA (Advanced SubStation Alpha)、WebVTT、SRT 以及 TTML。
@@ -169,10 +171,9 @@ log_level: "info"
 | **API 密钥 (API Key)** | *(留空即可)* | 本地服务已配置好密钥转发，无需客户端二次鉴权 |
 | **目标语言** | `zh` (Chinese) | 简体中文（若需日韩罗马音可传 `romaji`） |
 
-> **提示**：若客户端想要将日韩语歌词转为罗马音，可通过以下任一方式发起请求：
-> - URL Query 带上 `?romaji=true` 或 `?romanize=true`；
-> - 请求体传 `"target": "romaji"`；
-> - 请求 Header 附带 `X-Lyrics-Romanize: true`。
+> **提示**：若需要日韩语歌词输出罗马音：
+> - **全局开关（最省心）**：直接在 Web 控制台（`http://127.0.0.1:5000`）中勾选开启【强制罗马音模式】，或在 `config.yaml` 中设置 `force_romaji: true`，无需播放器做任何特殊配置；
+> - **客户端按需传参**：URL Query 带上 `?romaji=true`、请求体传 `"target": "romaji"`，或请求 Header 附带 `X-Lyrics-Romanize: true`。
 
 ---
 
