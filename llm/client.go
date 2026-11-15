@@ -8,8 +8,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"ai-lyrics-translate/config"
 )
@@ -90,6 +92,11 @@ func (c *Client) TranslateBatch(ctx context.Context, cleanLines []string, source
 		return []string{}, "", nil
 	}
 
+	// 非罗马音模式下，如果全曲仅包含符号/Emoji/空白（无任何可翻译语种字符），0 Token 直接返回全空行
+	if !isRomanize && allLinesSymbolOnly(cleanLines) {
+		return make([]string, len(cleanLines)), "local-skip (no-translatable-text)", nil
+	}
+
 	priority := c.cfg.GetPriority()
 	providers := c.cfg.GetProviders()
 
@@ -140,8 +147,9 @@ func (c *Client) callProviderWithRetry(ctx context.Context, provName string, pro
 	systemPrompt := BuildSystemPrompt(targetLang, c.cfg.GetUserPrompt(), c.cfg.GetMetaPrompt(), isRomanize)
 
 	var lastErr error
+	var missingIndices []int
 	for attempt := 1; attempt <= maxRetries+1; attempt++ {
-		userContent := BuildUserContent(cleanLines, contextInfo, attempt)
+		userContent := BuildUserContentWithMissing(cleanLines, contextInfo, attempt, missingIndices)
 
 		var translatedRaw string
 		var err error
@@ -163,18 +171,24 @@ func (c *Client) callProviderWithRetry(ctx context.Context, provName string, pro
 			continue
 		}
 
-		// 结果清洗与行数校验
-		resultLines := cleanOutputLines(translatedRaw)
-		if len(resultLines) == len(cleanLines) {
-			return resultLines, nil
+		// 智能解析输出（优先 JSON 行号映射，向后兼容纯文本格式）
+		parsedLines, missing, isJSON := parseLLMOutput(translatedRaw, len(cleanLines))
+		if len(missing) == 0 && len(parsedLines) == len(cleanLines) {
+			return postProcessTranslations(parsedLines, cleanLines, isRomanize), nil
 		}
 
-		log.Printf("[WARN] [%s] 返回行数不一致 (期望 %d 行，实际 %d 行)，准备重试或对齐", provName, len(cleanLines), len(resultLines))
+		if isJSON && len(missing) > 0 {
+			missingIndices = missing
+			log.Printf("[WARN] [%s] 返回 JSON 缺少编号 %v (共 %d 行)，准备重试或对齐", provName, missing, len(cleanLines))
+		} else {
+			missingIndices = nil
+			log.Printf("[WARN] [%s] 返回行数不一致 (期望 %d 行，实际 %d 行)，准备重试或对齐", provName, len(cleanLines), len(parsedLines))
+		}
 
-		// 若已达最大重试次数，进行兜底行对齐
+		// 若已达最大重试次数，进行安全兜底行对齐（保持已解析行号绝对不串位）
 		if attempt == maxRetries+1 {
-			aligned := alignLines(resultLines, cleanLines)
-			return aligned, nil
+			aligned := alignLinesSafe(parsedLines, missing, isJSON, cleanLines, targetLang, isRomanize)
+			return postProcessTranslations(aligned, cleanLines, isRomanize), nil
 		}
 	}
 
@@ -336,52 +350,265 @@ func (c *Client) callGeminiAPI(ctx context.Context, prov config.ProviderConfig, 
 	return geminiResp.Candidates[0].Content.Parts[0].Text, nil
 }
 
-// cleanOutputLines 清理可能包裹的 markdown 代码块及首尾空白
-func cleanOutputLines(raw string) []string {
+// stripMarkdownFence 剥离可能包裹在输出外层的 Markdown 代码块标记
+func stripMarkdownFence(raw string) string {
 	content := strings.TrimSpace(raw)
-	// 去除可能出现的 ``` 或 ```markdown / ```text
 	if strings.HasPrefix(content, "```") {
 		lines := strings.Split(content, "\n")
 		if len(lines) >= 2 {
 			if strings.HasPrefix(lines[0], "```") {
 				lines = lines[1:]
 			}
-			if len(lines) > 0 && strings.HasPrefix(lines[len(lines)-1], "```") {
+			if len(lines) > 0 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "```") {
 				lines = lines[:len(lines)-1]
 			}
 			content = strings.Join(lines, "\n")
 		}
 	}
+	return strings.TrimSpace(content)
+}
 
+// sanitizeSingleLine 清理单行值，防止内部携带意外换行破坏行结构
+func sanitizeSingleLine(val string) string {
+	s := strings.ReplaceAll(val, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	return strings.TrimSpace(s)
+}
+
+// parseLLMOutput 智能解析大模型返回结果，优先按行号 JSON 映射，向后兼容 JSON 数组与纯文本行
+func parseLLMOutput(raw string, expectedCount int) ([]string, []int, bool) {
+	content := stripMarkdownFence(raw)
+
+	if lines, missing, ok := tryParseJSONObject(content, expectedCount); ok {
+		return lines, missing, true
+	}
+
+	if lines, ok := tryParseJSONArray(content, expectedCount); ok {
+		return lines, nil, true
+	}
+
+	textLines := cleanOutputLines(content, expectedCount)
+	return textLines, nil, false
+}
+
+func tryParseJSONObject(content string, expectedCount int) ([]string, []int, bool) {
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start == -1 || end <= start {
+		return nil, nil, false
+	}
+
+	jsonSub := content[start : end+1]
+	var rawMap map[string]any
+	if err := json.Unmarshal([]byte(jsonSub), &rawMap); err != nil {
+		return nil, nil, false
+	}
+
+	idxMap := make(map[int]string, len(rawMap))
+	matchedCount := 0
+	for k, v := range rawMap {
+		idx, err := strconv.Atoi(strings.TrimSpace(k))
+		if err != nil || idx < 0 || idx >= expectedCount {
+			continue
+		}
+		matchedCount++
+		if v == nil {
+			idxMap[idx] = ""
+		} else {
+			idxMap[idx] = sanitizeSingleLine(fmt.Sprintf("%v", v))
+		}
+	}
+
+	// 必须至少命中一个有效下标键才认定为行号 JSON 映射
+	if matchedCount == 0 {
+		return nil, nil, false
+	}
+
+	result := make([]string, expectedCount)
+	var missing []int
+	for i := 0; i < expectedCount; i++ {
+		if val, exists := idxMap[i]; exists {
+			result[i] = val
+		} else {
+			missing = append(missing, i)
+		}
+	}
+	return result, missing, true
+}
+
+func tryParseJSONArray(content string, expectedCount int) ([]string, bool) {
+	start := strings.Index(content, "[")
+	end := strings.LastIndex(content, "]")
+	if start == -1 || end <= start {
+		return nil, false
+	}
+
+	var arr []any
+	if err := json.Unmarshal([]byte(content[start:end+1]), &arr); err != nil {
+		return nil, false
+	}
+	if len(arr) != expectedCount {
+		return nil, false
+	}
+
+	result := make([]string, expectedCount)
+	for i, v := range arr {
+		if v == nil {
+			result[i] = ""
+		} else {
+			result[i] = sanitizeSingleLine(fmt.Sprintf("%v", v))
+		}
+	}
+	return result, true
+}
+
+// cleanOutputLines 清理纯文本换行响应，小心保留应有的空行直到对齐预期行数
+func cleanOutputLines(content string, expectedCount int) []string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	content = strings.ReplaceAll(content, "\r", "\n")
 
 	rawLines := strings.Split(content, "\n")
-	var result []string
-	for _, l := range rawLines {
-		result = append(result, strings.TrimSpace(l))
+	result := make([]string, len(rawLines))
+	for i, l := range rawLines {
+		result[i] = strings.TrimSpace(l)
 	}
 
-	// 剔除末尾多余的空行
-	for len(result) > 0 && result[len(result)-1] == "" {
+	// 仅当多出末尾空行时才逐行裁剪，防止误删末尾本身为空的合法译文行
+	for len(result) > expectedCount && result[len(result)-1] == "" {
 		result = result[:len(result)-1]
 	}
 
 	return result
 }
 
-// alignLines 对齐处理：保证返回行数与源歌词行数绝对一致
-func alignLines(actual []string, original []string) []string {
+// alignLinesSafe 安全兜底对齐：JSON 映射模式下已对齐的编号绝不错位，仅填充真正缺失的编号
+func alignLinesSafe(parsed []string, missing []int, isJSON bool, original []string, targetLang string, isRomanize bool) []string {
 	targetLen := len(original)
-	aligned := make([]string, targetLen)
+	if isJSON {
+		aligned := make([]string, targetLen)
+		copy(aligned, parsed)
+		for _, idx := range missing {
+			if idx < 0 || idx >= targetLen {
+				continue
+			}
+			if !isRomanize && isLikelyTargetLangFallback(original[idx], targetLang) {
+				aligned[idx] = ""
+			} else {
+				aligned[idx] = original[idx]
+			}
+		}
+		return aligned
+	}
 
+	aligned := make([]string, targetLen)
 	for i := 0; i < targetLen; i++ {
-		if i < len(actual) && strings.TrimSpace(actual[i]) != "" {
-			aligned[i] = actual[i]
+		if i < len(parsed) {
+			aligned[i] = parsed[i]
+		} else if !isRomanize && isLikelyTargetLangFallback(original[i], targetLang) {
+			aligned[i] = ""
 		} else {
-			// 若不足，回退保留原文
 			aligned[i] = original[i]
 		}
 	}
 	return aligned
+}
+
+// postProcessTranslations 后处理：常规翻译模式下，若内容未变或为纯符号行则置为空行 ""
+func postProcessTranslations(results []string, originals []string, isRomanize bool) []string {
+	out := make([]string, len(results))
+	for i, res := range results {
+		cleaned := sanitizeSingleLine(res)
+		if isRomanize {
+			out[i] = cleaned
+			continue
+		}
+		if cleaned == "" {
+			out[i] = ""
+			continue
+		}
+		if i < len(originals) && (isBlankOrSymbolOnly(originals[i]) || isSameContent(originals[i], cleaned)) {
+			out[i] = ""
+			continue
+		}
+		out[i] = cleaned
+	}
+	return out
+}
+
+func allLinesSymbolOnly(lines []string) bool {
+	for _, l := range lines {
+		if !isBlankOrSymbolOnly(l) {
+			return false
+		}
+	}
+	return true
+}
+
+func isBlankOrSymbolOnly(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func stripPunctAndSpace(s string) string {
+	var sb strings.Builder
+	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			continue
+		}
+		sb.WriteRune(unicode.ToLower(r))
+	}
+	return sb.String()
+}
+
+func isSameContent(orig, trans string) bool {
+	if strings.EqualFold(strings.TrimSpace(orig), strings.TrimSpace(trans)) {
+		return true
+	}
+	noPunctOrig := stripPunctAndSpace(orig)
+	noPunctTrans := stripPunctAndSpace(trans)
+	return noPunctOrig != "" && noPunctOrig == noPunctTrans
+}
+
+func isLikelyTargetLangFallback(line, targetLang string) bool {
+	if isBlankOrSymbolOnly(line) {
+		return true
+	}
+	t := strings.ToLower(strings.TrimSpace(targetLang))
+	isZhTarget := t == "zh" || t == "zh-hans" || t == "zh-hant" || t == "zh-cn" || t == "zh-tw" || t == "zt" || t == "simplified" || t == "traditional"
+	if isZhTarget {
+		var hasHan, hasKanaOrHangul, hasLatinWord bool
+		latinSeq := 0
+		for _, r := range line {
+			switch {
+			case unicode.Is(unicode.Han, r):
+				hasHan = true
+				latinSeq = 0
+			case unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r):
+				hasKanaOrHangul = true
+				latinSeq = 0
+			case unicode.IsLetter(r):
+				latinSeq++
+				if latinSeq >= 6 {
+					hasLatinWord = true
+				}
+			default:
+				latinSeq = 0
+			}
+		}
+		return hasHan && !hasKanaOrHangul && !hasLatinWord
+	}
+	if t == "en" {
+		for _, r := range line {
+			if unicode.IsLetter(r) && r > unicode.MaxASCII {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }

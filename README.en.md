@@ -34,7 +34,7 @@
 4. **Context-Aware Lyrics (Song Title & Artist)**:
    - Automatically parses `[ti:]` (title) and `[ar:]` (artist) metadata from LRC, ASS, and WebVTT.
    - Injected into LLM context for deeper emotional nuance and accurate cultural references.
-   - **Anti-Leakage Meta Constraint**: Hardcoded meta prompt strictly forbids the model from outputting background info, ensuring a pure 1:1 line mapping.
+   - **Indexed Alignment & Empty Same-Language Return**: Enforces a JSON index-locked protocol that prevents line-shift desync, strictly forbids leaking external background info, and returns empty lines when a line is already in the target language or contains only symbols.
 
 5. **Japanese & Korean Romaji Transliteration**:
    - Transliterates Japanese to Hepburn Romaji, Korean to Revised Romanization, and Chinese to Pinyin (preserving English lines).

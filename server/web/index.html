@@ -402,7 +402,7 @@
         </div>
         <div class="form-group">
           <textarea id="meta-prompt-edit" rows="9"></textarea>
-          <div class="form-help" data-i18n="help_meta_prompt">负责严格 1:1 行数对应、纯净格式输出、原文语言保护，以及<b>严禁在输出中包含背景信息</b>的核心纪律。</div>
+          <div class="form-help" data-i18n="help_meta_prompt">负责 JSON 索引锁行 1:1 严格对应、同语种/纯符号自动返回空行，以及<b>严禁将外部背景信息误当作歌词行输出</b>的核心纪律。</div>
         </div>
         <div style="display: flex; gap: 10px; justify-content: flex-end;">
           <button class="btn btn-secondary" onclick="resetMetaPrompt()" data-i18n="btn_reset_meta">恢复默认元提示词</button>
@@ -538,7 +538,7 @@
         btn_delete: "删除",
         title_meta_prompt: "元提示词 (Meta Prompt)",
         badge_meta_prompt: "可编辑系统框架 · 行数与防泄漏约束",
-        help_meta_prompt: "负责严格 1:1 行数对应、纯净格式输出、原文语言保护，以及<b>严禁在输出中包含背景信息</b>的核心纪律。",
+        help_meta_prompt: "负责 JSON 索引锁行 1:1 严格对应、同语种/纯符号自动返回空行，以及<b>严禁将外部背景信息误当作歌词行输出</b>的核心纪律。",
         btn_reset_meta: "恢复默认元提示词",
         btn_save_meta: "保存元提示词",
         title_user_prompt: "用户提示词 (User Prompt)",
@@ -612,7 +612,7 @@
         btn_delete: "刪除",
         title_meta_prompt: "元提示詞 (Meta Prompt)",
         badge_meta_prompt: "可編輯系統框架 · 行數與防洩漏約束",
-        help_meta_prompt: "負責嚴格 1:1 行數對應、純淨格式輸出、原文語言保護，以及<b>嚴禁在輸出中包含背景資訊</b>的核心紀律。",
+        help_meta_prompt: "負責 JSON 索引鎖行 1:1 嚴格對應、同語種/純符號自動返回空行，以及<b>嚴禁將外部背景資訊誤當作歌詞行輸出</b>的核心紀律。",
         btn_reset_meta: "恢復預設元提示詞",
         btn_save_meta: "儲存元提示詞",
         title_user_prompt: "使用者提示詞 (User Prompt)",
@@ -686,7 +686,7 @@
         btn_delete: "Delete",
         title_meta_prompt: "Meta Prompt",
         badge_meta_prompt: "Editable Framework · Line Alignment & Protection",
-        help_meta_prompt: "Enforces strict 1:1 line correspondence, pure text output, and <b>strictly prohibits outputting background info</b>.",
+        help_meta_prompt: "Enforces strict 1:1 JSON-indexed line alignment, empty lines for same-language/symbol-only lines, and <b>prohibits leaking external background info as extra keys</b>.",
         btn_reset_meta: "Reset to Default Meta",
         btn_save_meta: "Save Meta Prompt",
         title_user_prompt: "User Prompt",
@@ -760,7 +760,7 @@
         btn_delete: "削除",
         title_meta_prompt: "メタプロンプト (Meta Prompt)",
         badge_meta_prompt: "編集可能フレームワーク · 行数厳守・情報漏洩防止",
-        help_meta_prompt: "1:1の厳格な行数対応、マークダウンなしの純粋な出力、および<b>出力に背景情報を含めない</b>制約を制御します。",
+        help_meta_prompt: "JSONインデックスによる1:1の厳格な行対応、同言語・記号行の空文字返却、および<b>外部背景情報の混入禁止</b>を制御します。",
         btn_reset_meta: "デフォルトに戻す",
         btn_save_meta: "メタプロンプトを保存",
         title_user_prompt: "ユーザープロンプト (User Prompt)",
@@ -834,7 +834,7 @@
         btn_delete: "삭제",
         title_meta_prompt: "메타 프롬프트 (Meta Prompt)",
         badge_meta_prompt: "수정 가능한 시스템 프레임워크 · 줄 수 엄수",
-        help_meta_prompt: "엄격한 1:1 줄 수 대응, 순수 텍스트 출력, <b>배경 정보 출력 금지</b> 등의 핵심 규칙을 제어합니다.",
+        help_meta_prompt: "JSON 인덱스 기반 1:1 줄 대응, 동일 언어/기호 줄의 빈 문자열 반환 및 <b>외부 배경 정보 유출 금지</b> 등 핵심 규칙을 제어합니다.",
         btn_reset_meta: "기본값으로 복원",
         btn_save_meta: "메타 프롬프트 저장",
         title_user_prompt: "사용자 프롬프트 (User Prompt)",

@@ -1,19 +1,20 @@
 package llm
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
 
-// MetaPromptFramework 硬编码元提示词系统框架（保证行数对应、纯净格式、绝不输出背景信息）
-const MetaPromptFramework = `你是一位专业音乐歌词翻译大师。请严格按照给定的【用户提示词】要求，将输入的歌词精准翻译为目标语言「{target}」。
+// MetaPromptFramework 硬编码元提示词系统框架（保证行号严格对齐、同语种返回空行、绝不乱吞正文）
+const MetaPromptFramework = `你是一位专业音乐歌词翻译大师。请严格按照给定的【用户提示词】要求，将输入的带编号 JSON 歌词逐行精准翻译为目标语言「{target}」。
 
 【硬性约束（最高优先级，绝不可违背）】：
-1. 严格行数对应：输入多少行有效歌词，就必须输出多少行译文，每行必须严格 1 对 1 对应，绝对不可合并行、拆分行、增加行或遗漏行。
-2. 纯净输出格式：仅输出翻译后的歌词文本，绝不包含任何 Markdown 代码块（如 ` + "```" + `）、行号、拼音注音、前缀或注释。
-3. 严禁输出背景信息：输入中可能附带歌曲的【背景信息】（如歌曲名、歌手/乐队等），该信息仅供你深入理解曲风、语境与情感色彩，绝对禁止在输出结果中输出任何背景信息、曲名或相关解释文字！
-4. 源语言自主识别：自行辨别歌词实际语种（不要盲从可能误判的外部语言设定，准确识别拉丁文、法语、德语、西班牙语、日语、韩语等）。
-5. 原文语言保护：若输入歌词本身已是目标语言，直接原样保留（若为中文且需简繁转换，则仅做字形转换，严禁篡改原词曲意）。`
+1. 严格行数对应与 JSON 键名锁定：输入是一个以行号字符串（"0", "1", ...）为键的 JSON 对象。你必须输出一个合法的 JSON 对象，包含与输入完全一致的所有行号键名（从 "0" 到最大行号，共 N 个键），绝对不可合并、拆分、增加或遗漏任何编号键（即便某行内容是歌曲名、作词、作曲、编曲、演唱等制作人员信息，只要它在输入 JSON 中有编号，就必须保留该编号并输出对应键！）。
+2. 纯净 JSON 输出格式：仅输出一个标准 JSON 对象，绝不包含任何 Markdown 代码块（如 ` + "```" + `）、行号前缀、注释或前言后记。
+3. 严禁输出背景信息：输入 JSON 之外附带的【背景信息】段落（如歌曲名、歌手/乐队等）仅供你理解曲风与语境，绝对禁止把那段【背景信息】作为额外键名混入输出 JSON 中！
+4. 源语言自主识别：自行辨别每行歌词实际语种（不要盲从外部可能误判的语言设定，准确区分中文、日语、韩语、英语、拉丁文、法语、德语、西班牙语等；结合整首歌语境准确分辨纯汉字行是中文还是日语）。
+5. 同语种直接返回空行：如果某行歌词本身已经是目标语言「{target}」（例如目标为简体中文且该行本身就是中文歌词或中文制作人员行，或目标为英文且该行本身就是英文），或者是无需翻译的纯符号/表情/音乐标识，不要原样照抄原文，必须直接将对应键的值设为空字符串 ""！（若仅需中文简繁字形转换且字形确有差异时才转换，转换后若与原文完全相同同样设为 ""）。`
 
 // DefaultUserPromptZhHans 简体中文文学级词作调优提示词
 const DefaultUserPromptZhHans = `【核心审美追求（坚决杜绝平庸直白）】：
@@ -35,7 +36,7 @@ const DefaultUserPromptGeneral = `【Core Artistic Standard】：
 
 // RomajiSystemPrompt 日韩语转罗马音专用提示词
 const RomajiSystemPrompt = `你是一位精通日语罗马字（Hepburn Romaji）、韩语罗马音（Revised Romanization of Korean）与汉语拼音（Pinyin）的专业语音转写专家。
-你的任务是将输入的歌词文本，逐行转写为规范易读的标准罗马音或拼音（拉丁字母注音）。
+你的任务是将输入的带编号 JSON 歌词，逐行转写为规范易读的标准罗马音或拼音（拉丁字母注音）。
 
 【转写规范与要求】：
 1. 日语歌词：
@@ -50,9 +51,9 @@ const RomajiSystemPrompt = `你是一位精通日语罗马字（Hepburn Romaji�
    - 若某行歌词原本已是英文、外语拉丁字母或伴唱虚词，完整原样保留。
 
 【硬性约束（最高优先级）】：
-1. 严格行数对应：输入多少行有效歌词，就必须输出多少行罗马音，每行严格 1 对 1 对应，绝不可合并行、拆分行或遗漏行。
-2. 纯净输出格式：仅输出转写后的罗马音文本，绝不包含任何 Markdown 代码块（如 ` + "```" + `）、行号、假名/汉字原文或解释。
-3. 严禁输出背景信息：输入中可能附带【背景信息】（如歌曲名、歌手），仅供理解语境，绝不可在输出中输出任何背景信息。`
+1. 严格行数对应与 JSON 键名锁定：输入是一个以行号字符串（"0", "1", ...）为键的 JSON 对象。你必须输出一个合法的 JSON 对象，包含与输入完全一致的所有行号键名（从 "0" 到最大行号），绝对不可合并、拆分或遗漏任何编号键。
+2. 纯净 JSON 输出格式：仅输出一个标准 JSON 对象，绝不包含任何 Markdown 代码块（如 ` + "```" + `）、解释文字或前言后记。
+3. 严禁输出背景信息：输入 JSON 之外附带的【背景信息】仅供理解语境，绝不可把背景信息额外输出进 JSON 中！`
 
 // BuildSystemPrompt 拼接元提示词框架（默认或自定义）与用户提示词
 func BuildSystemPrompt(targetLang, customUserPrompt, customMetaPrompt string, isRomanize bool) string {
@@ -78,19 +79,53 @@ func BuildSystemPrompt(targetLang, customUserPrompt, customMetaPrompt string, is
 	return meta + "\n\n【用户提示词】\n" + userPrompt
 }
 
-// BuildUserContent 构造送给大模型的消息文本，包含行数强调与背景信息
+// BuildUserContent 构造送给大模型的消息文本，包含行数强调、JSON 索引结构与背景信息
 func BuildUserContent(cleanLines []string, contextInfo string, attempt int) string {
+	return BuildUserContentWithMissing(cleanLines, contextInfo, attempt, nil)
+}
+
+// BuildUserContentWithMissing 构造带重试缺失键提醒的 JSON 索引输入消息
+func BuildUserContentWithMissing(cleanLines []string, contextInfo string, attempt int, missingIndices []int) string {
 	var sb strings.Builder
 	if strings.TrimSpace(contextInfo) != "" {
 		sb.WriteString(strings.TrimSpace(contextInfo))
-		sb.WriteString("\n（注意：上述背景信息仅供理解语境与情绪参考，严禁在输出中包含背景信息，必须严格按行输出）\n\n")
+		sb.WriteString("\n（注意：上述背景信息仅供理解语境与情绪参考，严禁在输出中包含此背景信息；但下方 JSON 输入中的每一条编号都必须保留在输出 JSON 中！）\n\n")
 	}
 
 	if attempt > 1 {
-		sb.WriteString(fmt.Sprintf("【注意：必须输出严格 %d 行，每一行一一对应，不要增加或减少任何一行】\n\n", len(cleanLines)))
+		if len(missingIndices) > 0 {
+			var missingStr []string
+			for _, idx := range missingIndices {
+				missingStr = append(missingStr, fmt.Sprintf("%q", fmt.Sprintf("%d", idx)))
+			}
+			sb.WriteString(fmt.Sprintf("【重要重试提醒：上次输出缺少了编号 %s！必须输出包含全部 %d 个键（\"0\" 到 \"%d\"）的完整 JSON 对象，同语种行请设为空字符串 \"\"，绝不可删除或遗漏任何编号】\n\n",
+				strings.Join(missingStr, ", "), len(cleanLines), len(cleanLines)-1))
+		} else {
+			sb.WriteString(fmt.Sprintf("【重要重试提醒：必须输出标准 JSON 对象，严格包含 \"0\" 到 \"%d\" 共 %d 个键，不可增加或遗漏任何键，同语种行请设为空字符串 \"\"】\n\n",
+				len(cleanLines)-1, len(cleanLines)))
+		}
 	}
 
-	sb.WriteString(strings.Join(cleanLines, "\n"))
+	sb.WriteString(buildIndexedJSONInput(cleanLines))
+	return sb.String()
+}
+
+func buildIndexedJSONInput(lines []string) string {
+	var sb strings.Builder
+	sb.WriteString("{\n")
+	for i, line := range lines {
+		keyBytes, _ := json.Marshal(fmt.Sprintf("%d", i))
+		valBytes, _ := json.Marshal(line)
+		sb.WriteString("  ")
+		sb.Write(keyBytes)
+		sb.WriteString(": ")
+		sb.Write(valBytes)
+		if i < len(lines)-1 {
+			sb.WriteString(",")
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("}")
 	return sb.String()
 }
 

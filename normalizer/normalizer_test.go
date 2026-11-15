@@ -417,3 +417,41 @@ func TestContextInfoExtraction(t *testing.T) {
 		t.Errorf("expected empty context, got '%s'", pNoMeta.FormatContextInfo())
 	}
 }
+
+func TestRebuildLyricsWithEmptyLines(t *testing.T) {
+	// 1. 纯文本带空行响应（同语言返回空行，仅翻译外语行）
+	plain := "作词：cop\n事到如今\nつまらなぃ\n装作很帅气的将台词抛出来"
+	parsedPlain := ParseLyrics(plain)
+	rebuiltPlain := parsedPlain.RebuildLyrics([]string{"", "", "真无聊", ""})
+	expectedPlain := "\n\n真无聊\n"
+	if rebuiltPlain != expectedPlain {
+		t.Errorf("expected %q, got %q", expectedPlain, rebuiltPlain)
+	}
+
+	// 2. 带 LRC 时间轴时空行不带多余空格
+	lrc := "[00:01.00]事到如今\n[00:05.00]つまらなぃ"
+	parsedLrc := ParseLyrics(lrc)
+	rebuiltLrc := parsedLrc.RebuildLyrics([]string{"", "真无聊"})
+	expectedLrc := "[00:01.00]\n[00:05.00] 真无聊"
+	if rebuiltLrc != expectedLrc {
+		t.Errorf("expected %q, got %q", expectedLrc, rebuiltLrc)
+	}
+}
+
+func TestGenerateCacheKeyWithVersion(t *testing.T) {
+	raw := "[00:01.00]Hello world"
+	baseKey, baseNorm := GenerateCacheKey(raw, "zh")
+	v1Key, v1Norm := GenerateCacheKeyWithVersion(raw, "zh", "v1.0")
+	emptyVerKey, _ := GenerateCacheKeyWithVersion(raw, "zh", "")
+	v2Key, _ := GenerateCacheKeyWithVersion(raw, "zh", "v2.0")
+
+	if baseNorm != v1Norm {
+		t.Fatalf("expected identical normalized text, got %q vs %q", baseNorm, v1Norm)
+	}
+	if baseKey != v1Key || baseKey != emptyVerKey {
+		t.Errorf("expected v1.0 and empty promptVersion to match GenerateCacheKey (%s), got v1=%s empty=%s", baseKey, v1Key, emptyVerKey)
+	}
+	if v2Key == baseKey {
+		t.Errorf("expected v2.0 promptVersion to produce a distinct cache key, got %s", v2Key)
+	}
+}

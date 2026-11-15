@@ -7,7 +7,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -682,6 +684,245 @@ func TestAPIConfigForceRomaji(t *testing.T) {
 	_ = json.Unmarshal(wGet2.Body.Bytes(), &cfgMap2)
 	if cfgMap2["force_romaji"] != true {
 		t.Errorf("expected force_romaji to be true, got %v", cfgMap2["force_romaji"])
+	}
+}
+
+// TestSameLanguageReturnsEmptyLinesE2E 端到端测试：验证目标语言与源语言一致返回空行、不与后面歌词串行，且缓存命中完全一致
+func TestSameLanguageReturnsEmptyLinesE2E(t *testing.T) {
+	var llmCallCount int32
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&llmCallCount, 1)
+		// 读取发给 LLM 的请求内容判断是单行数组还是整曲
+		var reqBody llm.ChatCompletionRequest
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		userMsg := ""
+		if len(reqBody.Messages) > 1 {
+			userMsg = reqBody.Messages[1].Content
+		}
+
+		var contentJSON string
+		if strings.Contains(userMsg, "つまらなぃ") {
+			contentJSON = `{"0": "", "1": "", "2": "真无聊", "3": ""}`
+		} else if strings.Contains(userMsg, "Hello") {
+			contentJSON = `{"0": "你好"}`
+		} else {
+			contentJSON = `{"0": ""}`
+		}
+
+		resp := llm.ChatCompletionResponse{}
+		resp.Choices = append(resp.Choices, struct {
+			Message llm.ChatMessage `json:"message"`
+		}{Message: llm.ChatMessage{Role: "assistant", Content: contentJSON}})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockLLM.Close()
+
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	srv.cfg.LLMProviders["deepseek"] = config.ProviderConfig{
+		Type:           "openai",
+		BaseURL:        mockLLM.URL,
+		APIKey:         "sk-mock",
+		Model:          "deepseek-chat",
+		TimeoutSeconds: 5,
+		MaxRetries:     1,
+	}
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	// 1. 模拟客户端发送带有制作人员行、中文歌词、夹杂一句日语的歌词，且客户端误标 source="ja"
+	lyrics := "cop、乐正绫 - 碎梦\n作词：cop\nつまらなぃ\n装作很帅气的将台词抛出来"
+	reqPayload, _ := json.Marshal(map[string]any{
+		"q":      lyrics,
+		"source": "ja",
+		"target": "zh",
+	})
+
+	// 第一次请求（Cache Miss）
+	req1 := httptest.NewRequest("POST", "/translate", bytes.NewBuffer(reqPayload))
+	req1.Header.Set("Content-Type", "application/json")
+	w1 := httptest.NewRecorder()
+	mux.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w1.Code, w1.Body.String())
+	}
+
+	var res1 TranslateResponseSingle
+	_ = json.Unmarshal(w1.Body.Bytes(), &res1)
+	expectedText := "\n\n真无聊\n"
+	if res1.TranslatedText != expectedText {
+		t.Fatalf("expected %q, got %q", expectedText, res1.TranslatedText)
+	}
+
+	// 第二次相同请求（Cache Hit，模拟单曲循环）
+	req2 := httptest.NewRequest("POST", "/translate", bytes.NewBuffer(reqPayload))
+	req2.Header.Set("Content-Type", "application/json")
+	w2 := httptest.NewRecorder()
+	mux.ServeHTTP(w2, req2)
+	var res2 TranslateResponseSingle
+	_ = json.Unmarshal(w2.Body.Bytes(), &res2)
+	if res2.TranslatedText != expectedText {
+		t.Fatalf("cache hit expected %q, got %q", expectedText, res2.TranslatedText)
+	}
+	if atomic.LoadInt32(&llmCallCount) != 1 {
+		t.Errorf("expected 1 LLM call (second hit cache), got %d", llmCallCount)
+	}
+
+	// 2. 测试数组格式 ["事到如今", "Hello"] -> ["", "你好"]
+	batchPayload, _ := json.Marshal(map[string]any{
+		"q":      []string{"事到如今", "Hello"},
+		"source": "auto",
+		"target": "zh",
+	})
+	reqBatch := httptest.NewRequest("POST", "/translate", bytes.NewBuffer(batchPayload))
+	reqBatch.Header.Set("Content-Type", "application/json")
+	wBatch := httptest.NewRecorder()
+	mux.ServeHTTP(wBatch, reqBatch)
+	var resBatch TranslateResponseBatch
+	_ = json.Unmarshal(wBatch.Body.Bytes(), &resBatch)
+	if len(resBatch.TranslatedText) != 2 || resBatch.TranslatedText[0] != "" || resBatch.TranslatedText[1] != "你好" {
+		t.Errorf("unexpected batch result: %#v", resBatch.TranslatedText)
+	}
+}
+
+// TestCapturedSuiMengFormPayload 复现抓包得到的 BetterLyrics Form 请求：
+// 47 行纯文本中前 4 行为制作人员信息、中间仅第 25 行(index 24)为日语 "つまらなぃ"，其余 46 行为中文。
+// 验证即使大模型漏掉前 4 行 key 或回显中文原句，依然保持 47 行严格对齐不串行，且仅第 24 索引有译文、其余 46 行全为空行。
+func TestCapturedSuiMengFormPayload(t *testing.T) {
+	lines := []string{
+		"COP、乐正绫 - 碎梦",
+		"作词：COP",
+		"作曲：COP",
+		"演唱：乐正绫",
+		"事到如今 懒得想什么明天",
+		"抬眼只剩下没有转晴迹象的阴霾",
+		"招朋引伴 尽兴后匆忙四散",
+		"道别也不忍将偶像乏味感言打断",
+		"百无聊赖",
+		"将折成了纸飞机的传单展开",
+		"为奔波生计的油墨外",
+		"有潦草勾画的未来",
+		"从我又小又拥挤的房间",
+		"从我堆满了贪念的床边",
+		"飞向总有容身处的世界",
+		"却碎裂 却碎裂",
+		"在那四处是虫鸣的夏夜",
+		"在那潮湿又安静的街边",
+		"笨拙打着拍子的陌生人",
+		"都不见",
+		"不忍看未来 尽是歪扭的残骸",
+		"满天的阴霾降下为我覆上了尘埃",
+		"满纸剖白 讽笑后不再理睬",
+		"怎会为空泛的随口戏言徒增感慨",
+		"つまらなぃ",
+		"装作很帅气的将台词抛出来",
+		"如今除了感到好笑外",
+		"是对懦弱自己的悲哀",
+		"为我又小又拥挤的房间",
+		"为我堆满了床边的贪念",
+		"以为总有容身处的世界",
+		"却碎裂 却碎裂",
+		"在那两个人畅谈的夏夜",
+		"弦音如同鸥鸟飞离云边",
+		"词语诉说着由衷的喜欢",
+		"都不见 不能再见",
+		"分不清热泪和雨的终点",
+		"站在一步之遥倾塌面前",
+		"才发现被亲手推开的人 曾在我身边",
+		"事到如今 终于理解了明天",
+		"是被打碎的梦想重新拼凑的情节",
+		"如何安排 都指向这扇门外",
+		"让时间再次转动的时针预备摇摆",
+		"迈过碎块",
+		"我怀抱着美梦坠地后的碎块",
+		"除开道别的说辞外",
+		"原谅我最后的逃开",
+	}
+	if len(lines) != 47 {
+		t.Fatalf("expected 47 captured lines, got %d", len(lines))
+	}
+
+	mockLLM := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody llm.ChatCompletionRequest
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		if len(reqBody.Messages) < 2 {
+			t.Fatalf("expected system and user messages")
+		}
+		userMsg := reqBody.Messages[1].Content
+		if !strings.Contains(userMsg, `"0": "COP、乐正绫 - 碎梦"`) || !strings.Contains(userMsg, `"46": "原谅我最后的逃开"`) {
+			t.Fatalf("expected all 47 indexed lines sent to LLM, got userMsg: %s", userMsg)
+		}
+
+		// 故意模拟大模型漏掉 0..3（制作人员行）且把第 4 行回显原文，验证不会错位且能清洗回显
+		respMap := map[string]string{
+			"4":  "事到如今 懒得想什么明天",
+			"24": "真无聊",
+		}
+		for i := 5; i < 47; i++ {
+			if i == 24 {
+				continue
+			}
+			respMap[strconv.Itoa(i)] = ""
+		}
+		contentBytes, _ := json.Marshal(respMap)
+
+		resp := llm.ChatCompletionResponse{}
+		resp.Choices = append(resp.Choices, struct {
+			Message llm.ChatMessage `json:"message"`
+		}{Message: llm.ChatMessage{Role: "assistant", Content: string(contentBytes)}})
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer mockLLM.Close()
+
+	srv, _, cleanup := setupTestServer(t)
+	defer cleanup()
+	srv.cfg.LLMProviders["deepseek"] = config.ProviderConfig{
+		Type:           "openai",
+		BaseURL:        mockLLM.URL,
+		APIKey:         "sk-mock",
+		Model:          "deepseek-chat",
+		TimeoutSeconds: 5,
+		MaxRetries:     1,
+	}
+
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+
+	form := url.Values{}
+	form.Set("q", strings.Join(lines, "\n"))
+	form.Set("source", "ja")
+	form.Set("target", "zh")
+
+	req := httptest.NewRequest("POST", "/translate", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var res TranslateResponseSingle
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
+
+	gotLines := strings.Split(res.TranslatedText, "\n")
+	if len(gotLines) != 47 {
+		t.Fatalf("expected exact 47 output lines, got %d: %q", len(gotLines), res.TranslatedText)
+	}
+
+	for i, got := range gotLines {
+		if i == 24 {
+			if got != "真无聊" {
+				t.Errorf("line 24 expected '真无聊', got %q", got)
+			}
+		} else if got != "" {
+			t.Errorf("line %d (%q) expected empty string '', got %q", i, lines[i], got)
+		}
 	}
 }
 

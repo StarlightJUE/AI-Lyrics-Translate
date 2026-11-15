@@ -442,6 +442,13 @@ func (p *ParsedLyrics) ExtractCleanLinesForLLM() []string {
 // 3. 英文统一转为小写
 // 4. 计算 SHA256(规范化文本 + ":" + 目标语言)
 func GenerateCacheKey(rawText, targetLang string) (string, string) {
+	return GenerateCacheKeyWithVersion(rawText, targetLang, "")
+}
+
+// GenerateCacheKeyWithVersion 在内容与目标语言基础上纳入 promptVersion 进行缓存键计算。
+// 当 promptVersion 为空或默认值 "v1.0" 时，哈希格式与 GenerateCacheKey 保持完全一致以兼容既有缓存；
+// 当配置升级为其他版本（如 "v2.0"）时，自动生成隔离的新缓存键。
+func GenerateCacheKeyWithVersion(rawText, targetLang, promptVersion string) (string, string) {
 	// 解析并提取所有有效歌词行
 	parsed := ParseLyrics(rawText)
 	cleanLines := parsed.ExtractCleanLinesForLLM()
@@ -463,6 +470,10 @@ func GenerateCacheKey(rawText, targetLang string) (string, string) {
 	hasher := sha256.New()
 	hasher.Write([]byte(normalizedText))
 	hasher.Write([]byte(":" + strings.ToLower(strings.TrimSpace(targetLang))))
+	ver := strings.ToLower(strings.TrimSpace(promptVersion))
+	if ver != "" && ver != "v1.0" {
+		hasher.Write([]byte(":" + ver))
+	}
 	hashKey := hex.EncodeToString(hasher.Sum(nil))
 
 	return hashKey, normalizedText
@@ -512,7 +523,9 @@ func (p *ParsedLyrics) RebuildLyrics(translatedCleanLines []string) string {
 			result = append(result, line.PrefixTags+translated+line.SuffixTags)
 		case LineTypeLRC:
 			// LRC 标签风格：[00:01.00] 翻译文本（去除了所有行内的逐字时间戳）
-			if strings.HasSuffix(line.PrefixTags, " ") {
+			if translated == "" {
+				result = append(result, strings.TrimRight(line.PrefixTags, " "))
+			} else if strings.HasSuffix(line.PrefixTags, " ") {
 				result = append(result, line.PrefixTags+translated)
 			} else {
 				result = append(result, line.PrefixTags+" "+translated)

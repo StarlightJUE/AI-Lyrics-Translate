@@ -614,8 +614,9 @@ func (s *Server) translateSingleText(ctx context.Context, rawText, sourceLang, t
 		cacheTarget = "romaji"
 	}
 
-	// 生成内容感知哈希键与标准化文本
-	cacheKey, normalizedText := normalizer.GenerateCacheKey(rawText, cacheTarget)
+	// 生成内容感知哈希键与标准化文本（纳入 PromptVersion 以支持提示词升级隔离缓存）
+	promptVersion := s.cfg.PromptVersion
+	cacheKey, normalizedText := normalizer.GenerateCacheKeyWithVersion(rawText, cacheTarget, promptVersion)
 
 	// 解析原歌词结构（提取时间轴、纯歌词行，并自动提取歌名与歌手背景信息）
 	parsed := normalizer.ParseLyrics(rawText)
@@ -672,7 +673,7 @@ func (s *Server) translateSingleText(ctx context.Context, rawText, sourceLang, t
 			SourceLang:     sourceLang,
 			TargetLang:     cacheTarget,
 			ModelName:      modelUsed,
-			PromptVersion:  s.cfg.PromptVersion,
+			PromptVersion:  promptVersion,
 		}
 
 		if err := s.storage.Set(cacheEntry); err != nil {
