@@ -317,7 +317,7 @@
   <header>
     <div class="header-title">
       <h1>AI-Lyrics-Translate</h1>
-      <span class="badge" id="version-badge">v1.1.0</span>
+      <span class="badge" id="version-badge">v1.1.1</span>
       <span class="badge badge-status" data-i18n="status_running">服务运行中</span>
     </div>
     <div style="display: flex; align-items: center; gap: 12px;">
@@ -943,7 +943,7 @@
         if (!res.ok) throw new Error('Failed to load configuration');
         currentConfig = await res.json();
 
-        document.getElementById('version-badge').textContent = 'v' + (currentConfig.version || '1.1.0');
+        document.getElementById('version-badge').textContent = 'v' + (currentConfig.version || '1.1.1');
         
         // 元提示词回显
         document.getElementById('meta-prompt-edit').value = currentConfig.meta_prompt || currentConfig.default_meta_prompt || '';

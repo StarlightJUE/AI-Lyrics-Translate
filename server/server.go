@@ -20,7 +20,7 @@ import (
 )
 
 // Version 服务版本号
-const Version = "1.1.0"
+const Version = "1.1.1"
 
 //go:embed web/index.html
 var indexHTML []byte
