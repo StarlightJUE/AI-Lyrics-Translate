@@ -1,0 +1,299 @@
+name: Release Multi-Arch Binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish (defaults to version in server/server.go)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    if: ${{ github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-all-arch') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify storage build-tag selection
+        run: |
+          sqlite_files=$(CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go list -f '{{.GoFiles}}' ./storage)
+          plan9_files=$(CGO_ENABLED=0 GOOS=plan9 GOARCH=amd64 go list -f '{{.GoFiles}}' ./storage)
+          wasm_files=$(CGO_ENABLED=0 GOOS=js GOARCH=wasm go list -f '{{.GoFiles}}' ./storage)
+          echo "linux/amd64 -> $sqlite_files"
+          echo "plan9/amd64 -> $plan9_files"
+          echo "js/wasm     -> $wasm_files"
+          [[ "$sqlite_files" == *"storage_sqlite.go"* ]]
+          [[ "$plan9_files" == *"storage_json.go"* ]]
+          [[ "$wasm_files" == *"storage_json.go"* ]]
+
+      - name: Run default SQLite test suite
+        run: go test -count=1 ./...
+
+      - name: Run pure-Go JSON fallback test suite
+        run: go test -tags jsonstorage -count=1 ./...
+
+  build-main:
+    if: ${{ github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-all-arch') }}
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build 9 mainstream release archives
+        run: bash .github/scripts/build_release.sh main dist-main
+
+      - name: Verify mainstream archive count
+        run: |
+          count=$(find dist-main -maxdepth 1 -type f | wc -l | tr -d ' ')
+          echo "Main archive count: $count"
+          test "$count" -eq 9
+
+      - name: Upload mainstream artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-main
+          path: dist-main/*
+          if-no-files-found: error
+
+  build-all-arch:
+    if: ${{ github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-all-arch') }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        group:
+          - sqlite-linux-win
+          - sqlite-bsd
+          - json-linux-unix
+          - json-bsd
+          - json-plan9-wasm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build ${{ matrix.group }} archives
+        run: bash .github/scripts/build_release.sh "${{ matrix.group }}" "dist-${{ matrix.group }}"
+
+      - name: Upload ${{ matrix.group }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.group }}
+          path: dist-${{ matrix.group }}/*
+          if-no-files-found: error
+
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' || !endsWith(github.ref_name, '-all-arch') }}
+    needs: [build-main, build-all-arch]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download mainstream artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-main
+          path: release-main
+
+      - name: Download sqlite-linux-win artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-sqlite-linux-win
+          path: release-all-arch
+
+      - name: Download sqlite-bsd artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-sqlite-bsd
+          path: release-all-arch
+
+      - name: Download json-linux-unix artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-json-linux-unix
+          path: release-all-arch
+
+      - name: Download json-bsd artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-json-bsd
+          path: release-all-arch
+
+      - name: Download json-plan9-wasm artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-json-plan9-wasm
+          path: release-all-arch
+
+      - name: Verify downloaded asset counts and generate release notes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          main_count=$(find release-main -maxdepth 1 -type f | wc -l | tr -d ' ')
+          all_count=$(find release-all-arch -maxdepth 1 -type f | wc -l | tr -d ' ')
+          echo "release-main count: $main_count"
+          echo "release-all-arch count: $all_count"
+          test "$main_count" -eq 9
+          test "$all_count" -eq 35
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ver=$(grep -E 'const Version =' server/server.go | sed -E 's/.*"([^"]+)".*/\1/')
+            TAG="v${ver}"
+          else
+            TAG="$REF_NAME"
+          fi
+          ALL_ARCH_TAG="${TAG}-all-arch"
+
+          {
+            echo "TAG=$TAG"
+            echo "ALL_ARCH_TAG=$ALL_ARCH_TAG"
+          } >> "$GITHUB_ENV"
+
+          TAG="$TAG" ALL_ARCH_TAG="$ALL_ARCH_TAG" python3 - <<'PY'
+          import os, textwrap
+          tag = os.environ["TAG"]
+          all_tag = os.environ["ALL_ARCH_TAG"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+
+          main_md = textwrap.dedent("""\
+          # AI-Lyrics-Translate __TAG__
+
+          [English](#english) | [中文](#中文)
+
+          ---
+
+          ### 中文
+
+          针对音乐播放器与歌词插件深度优化的 **AI 歌词文学级翻译、罗马音转换与本地中继缓存系统**。
+
+          #### ✨ 核心更新
+          - 💾 **全架构纯 Go 存储自适应回退**：在 `modernc.org/sqlite` 原生不支持的 21 个冷门及实验平台（AIX、DragonFly BSD、Illumos、Solaris、Linux MIPS/PPC64、扩展 NetBSD/OpenBSD、Plan 9 以及实验性 WebAssembly）上，编译期自动切换为纯 Go JSON 原子落盘缓存（`lyrics_cache.json`），零 CGO 全静态编译扩展至全部 **44** 个 Go 目标。
+          - 🚀 **主版本核心阵营扩容至 9 平台**：新增 **`linux-loong64`**（龙芯）与 **`android-arm64`**（Termux）进入主 Release，与 Windows / Linux / macOS / RISC-V 主力平台同台直出。
+          - ⚙️ **GitHub Actions 自动化多架构发布**：推送版本 tag 后自动运行双后端全量测试、并行交叉编译全部 44 个架构并分流发布。
+
+          > 更多架构请见 [__ALL_TAG__](https://github.com/__REPO__/releases/tag/__ALL_TAG__)（包含 14 个 SQLite 扩展平台、19 个纯 Go JSON 回退操作系统及 2 个实验性 WASM 构建，共计 35 个异构包）。
+
+          ---
+
+          ### English
+
+          A lightweight, literary-tuned **AI Lyrics Translation, Romaji Transliteration & Local Caching Relay Service** tailored for music players.
+
+          #### ✨ Highlights
+          - 💾 **Pure-Go JSON Fallback Storage**: Automatically falls back at compile time to pure-Go JSON persistence (`lyrics_cache.json`) on 21 exotic/experimental targets unsupported by `modernc.org/sqlite` (AIX, DragonFly BSD, Illumos, Solaris, Linux MIPS/PPC64, extended NetBSD/OpenBSD, Plan 9, and experimental WASM), bringing zero-CGO cross-compilation coverage to **44** targets.
+          - 🚀 **Promoted Mainstream Targets (9 Builds)**: `linux-loong64` (LoongArch64) and `android-arm64` (Termux) are now included directly in the main release alongside Windows, Linux (`amd64`/`arm64`/`riscv64`), and macOS (`amd64`/`arm64`).
+          - ⚙️ **Automated Multi-Arch CI/CD**: Tag pushes automatically run both SQLite and JSON test suites, cross-compile all 44 targets, and publish both release channels.
+
+          > For more architectures, see [__ALL_TAG__](https://github.com/__REPO__/releases/tag/__ALL_TAG__) (35 exotic/experimental packages).
+          """)
+
+          all_md = textwrap.dedent("""\
+          # AI-Lyrics-Translate __ALL_TAG__ (Exotic & Experimental Architectures)
+
+          [English](#english) | [中文](#中文)
+
+          > 主流桌面及常用发行平台（Windows x64/arm64、Linux x64/arm64/riscv64/loong64、Android arm64 Termux、macOS x64/arm64）请前往主版本 [__TAG__](https://github.com/__REPO__/releases/tag/__TAG__) 下载。
+
+          ---
+
+          ### 中文
+
+          得益于纯 Go 零 CGO 与编译期 JSON 存储回退机制，本专版收录除主版本外的全部 **35** 个扩展、复古、企业级与实验性构建包：
+
+          #### 1. SQLite WAL 引擎扩展平台（14 个）
+          - **Linux / Windows 扩展**：`linux-armv7`、`linux-armv6`、`linux-armv5`、`linux-386`、`linux-ppc64le`、`linux-s390x`、`windows-386`
+          - **BSD 家族**：`freebsd-amd64`、`freebsd-arm64`、`freebsd-arm`、`freebsd-386`、`openbsd-amd64`、`openbsd-arm64`、`netbsd-amd64`
+
+          #### 2. 纯 Go JSON 回退存储操作系统（19 个，默认落盘 `lyrics_cache.json`）
+          - **企业级 / 类 Unix 系统**：`aix-ppc64`、`dragonfly-amd64`、`illumos-amd64`、`solaris-amd64`
+          - **Linux 路由器与大端架构**：`linux-mips`、`linux-mipsle`、`linux-mips64`、`linux-mips64le`、`linux-ppc64`
+          - **BSD 全体系扩展**：`netbsd-386`、`netbsd-arm`、`netbsd-arm64`、`openbsd-386`、`openbsd-arm`、`openbsd-ppc64`、`openbsd-riscv64`
+          - **Plan 9**：`plan9-386`、`plan9-amd64`、`plan9-arm`
+
+          #### 3. 实验性 WebAssembly 构建（2 个，概念/实验产物）
+          - `js-wasm`、`wasip1-wasm`（标准 WASM 沙箱环境中不支持直接开放宿主 TCP 服务端口与原生本地文件持久化，仅供实验验证）
+
+          ---
+
+          ### English
+
+          Powered by zero-CGO pure Go and compile-time JSON fallback storage, this release hosts all **35** additional exotic, vintage, enterprise, and experimental targets beyond the main [__TAG__](https://github.com/__REPO__/releases/tag/__TAG__) release:
+
+          #### 1. SQLite WAL Targets (14)
+          - **Linux / Windows**: `linux-armv7`, `linux-armv6`, `linux-armv5`, `linux-386`, `linux-ppc64le`, `linux-s390x`, `windows-386`
+          - **BSD**: `freebsd-amd64`, `freebsd-arm64`, `freebsd-arm`, `freebsd-386`, `openbsd-amd64`, `openbsd-arm64`, `netbsd-amd64`
+
+          #### 2. Pure-Go JSON Fallback OS Targets (19, persists to `lyrics_cache.json`)
+          - **Enterprise & Unix**: `aix-ppc64`, `dragonfly-amd64`, `illumos-amd64`, `solaris-amd64`
+          - **Linux MIPS / Big-Endian PowerPC**: `linux-mips`, `linux-mipsle`, `linux-mips64`, `linux-mips64le`, `linux-ppc64`
+          - **Extended BSD**: `netbsd-386`, `netbsd-arm`, `netbsd-arm64`, `openbsd-386`, `openbsd-arm`, `openbsd-ppc64`, `openbsd-riscv64`
+          - **Plan 9**: `plan9-386`, `plan9-amd64`, `plan9-arm`
+
+          #### 3. Experimental WebAssembly Builds (2)
+          - `js-wasm`, `wasip1-wasm` (experimental artifacts; standard browser/WASI sandboxes cannot directly bind native TCP HTTP ports)
+          """)
+
+          for path, content in [("release_main.md", main_md), ("release_all_arch.md", all_md)]:
+              out = content.replace("__TAG__", tag).replace("__ALL_TAG__", all_tag).replace("__REPO__", repo)
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(out)
+          PY
+
+      - name: Publish main release (${{ env.TAG }})
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-main/* --clobber
+            gh release edit "$TAG" --notes-file release_main.md --latest
+          else
+            gh release create "$TAG" release-main/* \
+              --target "$GITHUB_SHA" \
+              --title "${TAG} - 全架构纯 Go JSON 回退、龙芯/Android 转正与自动化发布" \
+              --notes-file release_main.md \
+              --latest
+          fi
+
+      - name: Publish all-arch release (${{ env.ALL_ARCH_TAG }})
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$ALL_ARCH_TAG" >/dev/null 2>&1; then
+            gh release upload "$ALL_ARCH_TAG" release-all-arch/* --clobber
+            gh release edit "$ALL_ARCH_TAG" --notes-file release_all_arch.md --latest=false
+          else
+            gh release create "$ALL_ARCH_TAG" release-all-arch/* \
+              --target "$GITHUB_SHA" \
+              --title "${ALL_ARCH_TAG} (Exotic & Experimental Architectures)" \
+              --notes-file release_all_arch.md \
+              --latest=false
+          fi

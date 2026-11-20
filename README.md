@@ -51,8 +51,10 @@
    - **切歌不丢缓存**：用户在播放器中快速切歌导致 HTTP 请求被主动取消时，只要该歌词已派发至大模型，系统便会自动脱离客户端生命周期转入后台独立运行至完毕，并完整持久化写入 SQLite。下次再切回该歌曲时直接毫秒级秒出，彻底杜绝二次 MISS 与重复消耗 Token。
    - **并发去重复用 (In-Flight Dedup)**：当播放器主界面与桌面歌词组件同时发起相同翻译请求时，自动复用在途任务合并等待，避免重复计费。
 
-8. **极致轻量（~15MB 内存）与纯 Go 实现**：
-   - 基于纯 Go 开发（内置纯 Go SQLite 驱动，无 CGO 依赖）。
+8. **极致轻量（~15MB 内存）与全架构纯 Go 实现**：
+   - 基于纯 Go 零 CGO 构建，实测覆盖 Go 全部 **44** 个可静态交叉编译的架构与系统组合：
+     - **23 个主流与扩展平台**内置纯 Go SQLite WAL 引擎（`modernc.org/sqlite`）。
+     - **21 个冷门及实验平台**（AIX、DragonFly BSD、Illumos、Solaris、Linux MIPS/MIPSLE/MIPS64/MIPS64LE/PPC64、扩展 NetBSD/OpenBSD、Plan 9，以及实验性 `js/wasm`、`wasip1/wasm`）会在编译期无感回退至纯 Go JSON 文件缓存（默认自动映射为 `lyrics_cache.json`）。
    - 空闲常驻内存仅 **约 10MB ~ 15MB**，开机后台静默运行毫无负担。
    - 严格安全隔离：敏感 Key 永不入库，默认仅保存在本地配置文件中。
 
@@ -62,7 +64,9 @@
 
 ### 方式一：直接下载预编译二进制
 
-1. 前往 👉 [**GitHub Releases**](https://github.com/StarlightJUE/AI-Lyrics-Translate/releases) 页面，下载对应系统的预编译包。
+1. 前往 [**GitHub Releases**](https://github.com/StarlightJUE/AI-Lyrics-Translate/releases) 页面，按你的系统选择下载：
+   - **主版本 Release（如 `v1.1.2`）**：包含 **9** 个核心发行目标：`windows-amd64`、`windows-arm64`、`linux-amd64`、`linux-arm64`、`linux-riscv64`、`linux-loong64`（龙芯）、`android-arm64`（Termux）、`darwin-amd64`、`darwin-arm64`。
+   - **全架构专版（`<版本>-all-arch`）**：包含其余 **35** 个异构/冷门/实验目标（14 个 SQLite 扩展平台 + 19 个纯 Go JSON 回退操作系统 + `js-wasm` / `wasip1-wasm` 实验性 WebAssembly 产物）。
 2. 解压到任意目录并启动程序（Windows 双击 `ai-lyrics-translate.exe`）。
 3. 程序首次运行会自动生成带详细中文注释的 `config.yaml`。
 4. 打开浏览器访问 `http://localhost:5000/`，在 Web 界面中直接查看与管理！
@@ -86,7 +90,7 @@ go run main.go
 启动成功后，控制台将显示服务看板：
 ```text
 ==================================================
-   AI-Lyrics-Translate 歌词翻译本地中继缓存 (v1.1.1)
+   AI-Lyrics-Translate 歌词翻译本地中继缓存 (v1.1.2)
 ==================================================
 协议兼容: LibreTranslate REST API (/translate)
 Web 管理面板: http://0.0.0.0:5000/ (或 /ui)
@@ -97,7 +101,7 @@ Web 管理面板: http://0.0.0.0:5000/ (或 /ui)
 提示词模式: 内置文学级调优 PROMPT (元提示词骨架保护)
 简繁体偏好: simplified
 日韩罗马音: 已就绪 (客户端请求附带 ?romaji=true 即可触发)
-缓存数据库: lyrics_cache.db (SQLite WAL Mode)
+缓存存储: lyrics_cache.db (SQLite WAL Mode)
 ==================================================
 ```
 

@@ -49,8 +49,10 @@
    - When a client disconnects due to rapid song switching, an in-flight LLM translation detaches and finishes in the background, writing to SQLite. Prevents second-time cache misses and wasted tokens.
    - **In-Flight Deduplication**: Merges concurrent identical translation requests.
 
-8. **Ultra-Lightweight (~15MB RAM) Pure Go**:
-   - Powered by pure Go (with built-in pure Go SQLite, zero CGO dependencies).
+8. **Ultra-Lightweight (~15MB RAM) & 44-Target Cross-Platform Pure Go**:
+   - Compiled with zero CGO dependencies across **44** Go cross-compilation targets:
+     - **23 targets** run with the built-in pure-Go SQLite WAL engine (`modernc.org/sqlite`).
+     - **21 additional exotic/experimental targets** (AIX, DragonFly BSD, Illumos, Solaris, Linux MIPS/MIPSLE/MIPS64/MIPS64LE/PPC64, extended NetBSD/OpenBSD, Plan 9, plus experimental `js/wasm` and `wasip1/wasm`) automatically fall back at compile time to pure-Go JSON file caching (`lyrics_cache.json`).
    - Minimal background idle footprint: **~10MB - 15MB RAM**.
 
 ---
@@ -59,7 +61,9 @@
 
 ### Method 1: Download Pre-built Binary
 
-1. Visit [**GitHub Releases**](https://github.com/StarlightJUE/AI-Lyrics-Translate/releases) and download the archive for your OS.
+1. Visit [**GitHub Releases**](https://github.com/StarlightJUE/AI-Lyrics-Translate/releases) and download the archive for your OS:
+   - **Main Release (e.g. `v1.1.2`)**: **9** mainstream builds — `windows-amd64`, `windows-arm64`, `linux-amd64`, `linux-arm64`, `linux-riscv64`, `linux-loong64`, `android-arm64` (Termux), `darwin-amd64`, and `darwin-arm64`.
+   - **Exotic / All-Arch Release (`<tag>-all-arch`)**: **35** additional builds — 14 exotic SQLite targets, 19 pure-Go JSON fallback OS targets (`lyrics_cache.json`), and 2 experimental WebAssembly builds (`js-wasm`, `wasip1-wasm`).
 2. Extract and launch the executable (`ai-lyrics-translate.exe` on Windows).
 3. On first run, it automatically generates a documented `config.yaml`.
 4. Open `http://localhost:5000/` in your browser to manage settings.
