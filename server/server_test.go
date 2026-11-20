@@ -51,6 +51,7 @@ func setupTestServer(t *testing.T) (*Server, *storage.Storage, func()) {
 	cleanup := func() {
 		store.Close()
 		os.Remove(tmpDB)
+		os.Remove(store.Path())
 		os.Remove(tmpDB + "-wal")
 		os.Remove(tmpDB + "-shm")
 	}
@@ -334,6 +335,7 @@ func TestClientSongSwitchCancellationAndCacheHit(t *testing.T) {
 	defer func() {
 		store.Close()
 		os.Remove(tmpDB)
+		os.Remove(store.Path())
 		os.Remove(tmpDB + "-wal")
 		os.Remove(tmpDB + "-shm")
 	}()

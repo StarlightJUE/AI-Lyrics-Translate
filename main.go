@@ -39,6 +39,13 @@ func main() {
 	// 1. 加载配置（优先级：-c 指定文件 > config.yaml/json > .env > 环境变量 > 自动生成）
 	cfg := config.LoadConfig(configPath)
 
+	// 2. 初始化本地缓存存储（SQLite WAL 或冷门架构纯 Go JSON 回退）
+	store, err := storage.InitDB(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("初始化缓存存储失败: %v", err)
+	}
+	defer store.Close()
+
 	fmt.Println("==================================================")
 	fmt.Printf("   AI-Lyrics-Translate 歌词翻译本地中继缓存 (%s)\n", AppVersion)
 	fmt.Println("==================================================")
@@ -61,15 +68,8 @@ func main() {
 	}
 	fmt.Printf("简繁体偏好: %s\n", cfg.ChineseTargetDefault)
 	fmt.Printf("日韩罗马音: 已就绪 (客户端请求附带 ?romaji=true 即可触发)\n")
-	fmt.Printf("缓存数据库: %s (SQLite WAL Mode)\n", cfg.DBPath)
+	fmt.Printf("缓存存储: %s (%s)\n", store.Path(), store.BackendName())
 	fmt.Println("==================================================")
-
-	// 2. 初始化本地 SQLite 缓存存储
-	store, err := storage.InitDB(cfg.DBPath)
-	if err != nil {
-		log.Fatalf("初始化数据库失败: %v", err)
-	}
-	defer store.Close()
 
 	// 3. 初始化 LLM 客户端与 Server
 	llmClient := llm.NewClient(cfg)

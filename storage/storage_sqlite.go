@@ -1,3 +1,5 @@
+//go:build !jsonstorage && ((darwin && (amd64 || arm64)) || (windows && (386 || amd64 || arm64)) || (linux && (386 || amd64 || arm || arm64 || loong64 || ppc64le || riscv64 || s390x)) || (android && arm64) || (freebsd && (386 || amd64 || arm || arm64)) || (netbsd && amd64) || (openbsd && (amd64 || arm64)))
+
 package storage
 
 import (
@@ -9,22 +11,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// CachedTranslation 对应数据库中的缓存实体
-type CachedTranslation struct {
-	CacheKey       string
-	SourceText     string
-	TranslatedText string
-	SourceLang     string
-	TargetLang     string
-	ModelName      string
-	PromptVersion  string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
 // Storage 管理 SQLite 数据库连接及操作
 type Storage struct {
-	db *sql.DB
+	db   *sql.DB
+	path string
 }
 
 // InitDB 初始化数据库连接、开启 WAL 模式并执行初始化建表
@@ -34,9 +24,9 @@ func InitDB(dbPath string) (*Storage, error) {
 		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
 	}
 
-	// 连接池优化
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
+	// SQLite 单进程内串行化连接池，确保所有查询共享 PRAGMA 配置并避免多连接并发写入触发 SQLITE_BUSY
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(time.Hour)
 
 	// 开启 WAL (Write-Ahead Logging) 模式与性能调优 PRAGMA
@@ -72,7 +62,17 @@ func InitDB(dbPath string) (*Storage, error) {
 		return nil, fmt.Errorf("failed to initialize lyrics_cache table: %w", err)
 	}
 
-	return &Storage{db: db}, nil
+	return &Storage{db: db, path: dbPath}, nil
+}
+
+// Path 返回当前缓存数据库的文件路径
+func (s *Storage) Path() string {
+	return s.path
+}
+
+// BackendName 返回当前存储后端描述名称
+func (s *Storage) BackendName() string {
+	return "SQLite WAL Mode"
 }
 
 // Get 查询指定 cacheKey 的缓存记录
